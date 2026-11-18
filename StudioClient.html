@@ -1,0 +1,855 @@
+<style>
+.studio-dialog {width:min(560px,94vw);max-height:90vh;padding:24px;box-sizing:border-box;overflow:auto;border:1px solid #d0d5dd;border-radius:14px;color:#172033;font:14px/1.5 'Segoe UI',Arial,sans-serif;box-shadow:0 24px 70px rgba(15,23,42,.32)}
+.studio-dialog::backdrop {background:rgba(16,24,40,.55)}
+.studio-dialog h2 {margin:0 0 6px;font-size:20px}
+.studio-dialog p {margin:6px 0}
+.studio-dialog .muted {color:#667085;font-size:12px}
+.studio-dialog label.field {display:block;margin:12px 0 0;font-size:12px;font-weight:700}
+.studio-dialog label.field input {display:block;width:100%;min-height:38px;margin-top:5px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font:14px 'Segoe UI',Arial,sans-serif;box-sizing:border-box}
+.studio-dialog footer {display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px;margin-top:18px}
+.studio-dialog footer button {min-height:38px;padding:8px 15px;border:0;border-radius:8px;font:700 13px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+.studio-dialog footer button:disabled {opacity:.55;cursor:wait}
+.studio-dialog .save {color:#fff;background:#15803d}
+.studio-dialog .delete {color:#fff;background:#b42318;margin-right:auto}
+.studio-dialog .cancel {color:#344054;background:#e4e7ec}
+.studio-dialog .status {min-height:18px;margin-top:10px;font-size:12px;font-weight:700}
+.studio-dialog .status.error {color:#b42318}
+.design-mapping-dialog {width:min(960px,94vw)}
+.mapping-options {display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px;padding:16px;background:#f5f7fb;border-radius:10px}
+.mapping-options label {display:flex;flex-direction:column;gap:7px;font-weight:700}
+.mapping-options .mapping-header-check {flex-direction:row;align-items:center}
+.mapping-design-name {align-self:center;font-size:13px;overflow-wrap:anywhere}
+.design-mapping-dialog select {width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;box-sizing:border-box}
+.mapping-table-scroll {max-height:42vh;margin-top:12px;overflow:auto}
+.mapping-table-scroll table {width:100%;border-collapse:collapse;text-align:left}
+.mapping-table-scroll th,.mapping-table-scroll td {padding:10px;border-bottom:1px solid #e4e7ec;overflow-wrap:anywhere}
+.mapping-table-scroll th {position:sticky;top:0;background:#eff4ff}
+.mapping-table-scroll td:nth-child(2) {min-width:200px}
+#studioPhotoError {margin:0 0 12px;padding:12px;color:#a12622;background:#fff3f1;border-radius:8px}
+.studio-toasts {position:fixed;right:18px;bottom:18px;z-index:100000;display:flex;flex-direction:column;gap:8px;max-width:min(380px,calc(100vw - 36px))}
+.studio-toast {padding:11px 14px;border-radius:9px;background:#172033;color:#fff;font:600 13px/1.4 'Segoe UI',Arial,sans-serif;box-shadow:0 10px 26px rgba(15,23,42,.3);animation:toastIn .18s ease-out}
+.studio-toast.ok {background:#166534}
+.studio-toast.error {background:#b42318}
+@keyframes toastIn {from {opacity:0;transform:translateY(8px)}}
+@media(max-width:700px) {.mapping-options {grid-template-columns:1fr}}
+</style>
+<script>
+/** Shared helpers for Card Studio (every card list). */
+window.StudioReliability = (function () {
+  'use strict';
+  const popupTokens = new WeakMap();
+  const photoStates = new Map();   // recordKey -> loading | ready | missing | failed
+  const photoMemory = new Map();   // fileId:updated -> data URL
+  // Each list has its own photo cache; the name follows the current list (STUDIO_SCOPE).
+  const photoDbName = () => STUDIO_SCOPE + 'photo-cache';
+  const PHOTO_STORE = 'photos';
+  let photoDbPromise = null;
+  let manifestPromise = null;
+  let manifestTime = 0;
+  let recordKeys = () => [];
+  let running = 0;
+  const queue = [];
+  let cameraSession = null;
+
+  // ---------- Server calls ----------
+  function call(name, ...args) {
+    return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args));
+  }
+  /** At most four concurrent photo downloads. */
+  function queuedCall(name, ...args) {
+    return new Promise((resolve, reject) => {
+      queue.push(() => call(name, ...args).then(resolve, reject));
+      pump();
+    });
+  }
+  function pump() {
+    while (running < 4 && queue.length) {
+      const task = queue.shift();
+      running++;
+      task().finally(() => { running--; pump(); });
+    }
+  }
+
+  // ---------- Popup message security ----------
+  function registerPopup(popup) {
+    const token = crypto.randomUUID();
+    popupTokens.set(popup, token);
+    popup.__STUDIO_TOKEN = token;
+  }
+  window.addEventListener('message', event => {
+    const value = event.data;
+    if (!value || value.type !== 'STUDIO_CAPTURED_PHOTO') return;
+    const token = event.source && popupTokens.get(event.source);
+    const originOk = event.origin === (window.STUDIO_FRAME_ORIGIN || location.origin) || event.origin === 'null';
+    const dataOk = typeof value.dataUrl === 'string' && value.dataUrl.length <= 14000000 && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(value.dataUrl);
+    if (!token || value.sessionToken !== token || !originOk || !dataOk) {
+      event.stopImmediatePropagation();
+      if (token && !dataOk) alert('Invalid photo message. Capture the photo again.');
+    }
+  }, true);
+
+  // ---------- Photo cache (memory + IndexedDB, keyed by Drive file version) ----------
+  function photoDb() {
+    if (!window.indexedDB) return Promise.resolve(null);
+    if (!photoDbPromise) {
+      photoDbPromise = new Promise(resolve => {
+        const request = indexedDB.open(photoDbName(), 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains(PHOTO_STORE)) request.result.createObjectStore(PHOTO_STORE);
+        };
+        request.onsuccess = () => {
+          request.result.onversionchange = () => request.result.close();
+          resolve(request.result);
+        };
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+      });
+    }
+    return photoDbPromise;
+  }
+  async function dbGet(key) {
+    const db = await photoDb();
+    if (!db) return '';
+    return new Promise(resolve => {
+      try {
+        const request = db.transaction(PHOTO_STORE, 'readonly').objectStore(PHOTO_STORE).get(key);
+        request.onsuccess = () => resolve(request.result || '');
+        request.onerror = () => resolve('');
+      } catch (error) {
+        resolve('');
+      }
+    });
+  }
+  async function dbPut(key, value) {
+    const db = await photoDb();
+    try { if (db) db.transaction(PHOTO_STORE, 'readwrite').objectStore(PHOTO_STORE).put(value, key); } catch (error) { /* memory cache still works */ }
+  }
+  async function closePhotoCache() {
+    const db = photoDbPromise && await photoDbPromise;
+    if (db) db.close();
+    photoDbPromise = null;
+  }
+  function setRecordKeys(fn) {
+    recordKeys = fn;
+  }
+  /** Called when Card Studio switches to another list without reloading the page. */
+  async function switchList() {
+    manifestPromise = null;
+    manifestTime = 0;
+    photoStates.clear();
+    cameraSession = null;
+    const notice = document.getElementById('studioPhotoError');
+    if (notice) notice.remove();
+    await closePhotoCache(); // the next photo opens the new list's cache
+  }
+  function invalidate() {
+    manifestPromise = null;
+    manifestTime = 0;
+    photoStates.clear();
+    photoMemory.clear();
+    const notice = document.getElementById('studioPhotoError');
+    if (notice) notice.remove();
+  }
+  function showPhotoError(message) {
+    let notice = document.getElementById('studioPhotoError');
+    if (!notice) {
+      notice = document.createElement('p');
+      notice.id = 'studioPhotoError';
+      notice.setAttribute('role', 'alert');
+      const mount = document.getElementById('cardMount');
+      if (mount) mount.before(notice);
+    }
+    notice.textContent = 'Photo loading: ' + message;
+  }
+  /** Photo status for every current record: [{key, status: ready|missing|failed, fileId, updated, error}]. Cached for one minute. */
+  function manifest(type) {
+    if (!manifestPromise || Date.now() - manifestTime > 60000) {
+      manifestTime = Date.now();
+      manifestPromise = call('getStudioPhotoManifest', type, recordKeys().slice()).catch(error => {
+        manifestPromise = null;
+        throw error;
+      });
+    }
+    return manifestPromise;
+  }
+  /** Shrinks very large photos (e.g. from a photographer) to a sharp, print-friendly size. */
+  function shrinkPhoto(dataUrl, maxSide) {
+    return new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+        if (scale === 1) return resolve(dataUrl);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(image.naturalWidth * scale);
+        canvas.height = Math.round(image.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.92));
+      };
+      image.onerror = () => resolve(dataUrl);
+      image.src = dataUrl;
+    });
+  }
+  /**
+   * Returns a data URL ('' when the record has no photo).
+   * full = true loads the original file (printing, large view); otherwise the small Drive thumbnail.
+   */
+  async function photo(type, key, full) {
+    if (!key) return '';
+    photoStates.set(key, 'loading');
+    try {
+      let entry = (await manifest(type)).find(e => String(e.key) === String(key));
+      if (!entry) entry = (await call('getStudioPhotoManifest', type, [key]))[0];
+      if (entry.status === 'failed') throw new Error(entry.error);
+      if (entry.status === 'missing') {
+        photoStates.set(key, 'missing');
+        return '';
+      }
+      const cacheKey = (full ? 'full:' : '') + entry.fileId + ':' + entry.updated;
+      let data = photoMemory.get(cacheKey) || await dbGet(cacheKey);
+      if (!data) {
+        try {
+          data = await queuedCall('getStudioPhotoFile', type, entry.fileId, Boolean(full));
+        } catch (error) {
+          await new Promise(resolve => setTimeout(resolve, 400));
+          data = await queuedCall('getStudioPhotoFile', type, entry.fileId, Boolean(full));
+        }
+        if (full) data = await shrinkPhoto(data, 1000);
+        dbPut(cacheKey, data);
+      }
+      photoMemory.set(cacheKey, data);
+      photoStates.set(key, 'ready');
+      return data;
+    } catch (error) {
+      photoStates.set(key, 'failed');
+      showPhotoError(error.message || String(error));
+      throw error;
+    }
+  }
+
+  /**
+   * Renders records into host, then fills photos with six workers.
+   * o: {type, design, records, host, isActive(), onProgress(done, total), wrap(record, mount, host),
+   *     fullPhotos: true to use original photos (printing, large view)}
+   */
+  async function renderCardBatch(o) {
+    const jobs = o.records.map(record => {
+      const mount = document.createElement('div');
+      const key = CardDesignRuntime.getPhotoKey(o.design, record);
+      const options = {recordId: String(record.recordKey || ''), photoLoading: Boolean(key)};
+      if (o.wrap) o.wrap(record, mount, o.host); else o.host.appendChild(mount);
+      CardDesignRuntime.render(mount, o.design, record, options);
+      return {record, mount, options, key};
+    });
+    let next = 0;
+    let done = 0;
+    const isActive = o.isActive || (() => true);
+    async function worker() {
+      while (next < jobs.length && isActive()) {
+        const job = jobs[next++];
+        if (job.key) job.options.photoData = await photo(o.type, job.key, o.fullPhotos).catch(() => '');
+        if (!isActive()) return;
+        job.options.photoLoading = false;
+        CardDesignRuntime.render(job.mount, o.design, job.record, job.options);
+        done++;
+        if (o.onProgress) o.onProgress(done, jobs.length);
+      }
+    }
+    await Promise.all(Array.from({length: Math.min(6, jobs.length)}, worker));
+    return jobs.length;
+  }
+
+  // ---------- Navigation and storage scope ----------
+  function reopen() {
+    window.StudioTabsBridge.reload(STUDIO_TYPE);
+  }
+  /** After a source change the storage prefix changes; carry the design and mappings over. */
+  function carryDesignToScope(scope) {
+    if (!scope || scope === STUDIO_SCOPE) return;
+    Object.keys(localStorage).forEach(key => {
+      if (!key.startsWith(STUDIO_SCOPE)) return;
+      const name = key.slice(STUDIO_SCOPE.length);
+      if (name.startsWith('active_') || name.startsWith('id_card_column_mapping_')) localStorage.setItem(scope + name, localStorage.getItem(key));
+    });
+  }
+
+  // ---------- Dialog helpers ----------
+  function el(tag, props, children) {
+    const node = Object.assign(document.createElement(tag), props || {});
+    (children || []).forEach(child => node.append(child));
+    return node;
+  }
+  function makeDialog(className) {
+    const dialog = el('dialog', {className: 'studio-dialog ' + (className || '')});
+    document.body.appendChild(dialog);
+    dialog.addEventListener('close', () => dialog.remove());
+    return dialog;
+  }
+  /** Short, non-blocking message. tone: 'ok' | 'error' | undefined */
+  function toast(message, tone) {
+    let host = document.querySelector('.studio-toasts');
+    if (!host) {
+      host = el('div', {className: 'studio-toasts'});
+      host.setAttribute('role', 'status');
+      host.setAttribute('aria-live', 'polite');
+      document.body.appendChild(host);
+    }
+    const item = el('div', {className: 'studio-toast ' + (tone || ''), textContent: message});
+    host.appendChild(item);
+    setTimeout(() => item.remove(), tone === 'error' ? 7000 : 3500);
+  }
+  function setStatus(node, message, isError) {
+    node.textContent = message;
+    node.className = 'status' + (isError ? ' error' : '');
+  }
+
+  /**
+   * Record add/edit form.
+   * o: {title, note, fields:[{label, columnIndex, value}], onSave(columnValues), onDelete(), deleteConfirm}
+   */
+  function openRecordForm(o) {
+    const dialog = makeDialog();
+    const status = el('p', {className: 'status', role: 'status'});
+    const inputs = o.fields.map(f => el('input', {type: 'text', value: f.value || ''}));
+    inputs.forEach((input, i) => { input.dataset.columnIndex = String(o.fields[i].columnIndex); });
+    const save = el('button', {type: 'submit', className: 'save', textContent: 'Save'});
+    const cancel = el('button', {type: 'button', className: 'cancel', textContent: 'Cancel', onclick: () => dialog.close()});
+    const buttons = [save, cancel];
+    let remove = null;
+    if (o.onDelete) {
+      remove = el('button', {type: 'button', className: 'delete', textContent: 'Delete'});
+      buttons.unshift(remove);
+    }
+    const form = el('form', {method: 'dialog'}, [
+      el('h2', {textContent: o.title}),
+      el('p', {className: 'muted', textContent: o.note || ''}),
+      ...o.fields.map((f, i) => el('label', {className: 'field'}, [f.label, inputs[i]])),
+      el('footer', {}, buttons),
+      status
+    ]);
+    if (!o.fields.length) {
+      setStatus(status, 'No data fields are mapped for this design. Open Data Sources → Design Mapping, choose the columns, and save.', true);
+      save.disabled = true;
+    }
+    const busy = value => { [save, cancel, remove].forEach(b => { if (b) b.disabled = value; }); };
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const values = {};
+      inputs.forEach(input => { values[input.dataset.columnIndex] = input.value.trim(); });
+      if (!Object.values(values).some(Boolean)) return setStatus(status, 'Enter data in at least one field.', true);
+      busy(true);
+      setStatus(status, 'Saving…');
+      try {
+        await o.onSave(values);
+        dialog.close();
+      } catch (error) {
+        busy(false);
+        setStatus(status, error.message || String(error), true);
+      }
+    };
+    if (remove) {
+      remove.onclick = async () => {
+        if (!confirm(o.deleteConfirm)) return;
+        busy(true);
+        setStatus(status, 'Deleting…');
+        try {
+          await o.onDelete();
+          dialog.close();
+        } catch (error) {
+          busy(false);
+          setStatus(status, error.message || String(error), true);
+        }
+      };
+    }
+    dialog.appendChild(form);
+    dialog.showModal();
+    if (inputs[0]) inputs[0].focus();
+  }
+
+  /** One workflow for source, design, worksheet, header and column mapping. Nothing changes until Save. */
+  async function openDesignMapping(settings) {
+    settings = settings || {};
+    const old = document.getElementById('designMappingDialog');
+    if (old) old.close();
+    const dialog = makeDialog('design-mapping-dialog');
+    dialog.id = 'designMappingDialog';
+    dialog.innerHTML = `<form method="dialog">
+<h2>Design Mapping</h2>
+<p class="muted">Select a card design, worksheet, header setting, and data columns. Nothing changes until you save.</p>
+<div class="mapping-options">
+  <label>Card design <input id="mappingDesignFile" type="file" accept=".json,application/json"></label>
+  <p id="mappingDesignName" class="mapping-design-name"></p>
+  <label>Worksheet <select id="mappingWorksheet"></select></label>
+  <label class="mapping-header-check"><input id="mappingHeader" type="checkbox"> First row contains headers</label>
+</div>
+<p class="muted">Choose columns by position and sample value. Photo, Logo, Picture, Signature, Text, and School Year need no column.</p>
+<div class="mapping-table-scroll"><table>
+  <thead><tr><th>Design element</th><th>Spreadsheet column</th><th>Sample value</th></tr></thead>
+  <tbody id="mappingRows"></tbody>
+</table></div>
+<p class="muted">Saving reuses the hidden record/photo columns. Duplicate app-created columns are consolidated; your data rows and linked photos are preserved.</p>
+<p id="mappingStatus" class="status" role="status"></p>
+<footer><button type="button" class="cancel" id="mappingCancel">Cancel</button><button type="button" class="save" id="mappingSave">Save Design Mapping</button></footer>
+</form>`;
+    const $ = id => dialog.querySelector('#' + id);
+    const worksheet = $('mappingWorksheet');
+    const header = $('mappingHeader');
+    const status = $('mappingStatus');
+    const save = $('mappingSave');
+    const fileInput = $('mappingDesignFile');
+    let design = settings.design ? JSON.parse(JSON.stringify(settings.design)) : null;
+    let info = null;
+    let working = {};
+    let sourceKey = '';
+    let request = 0;
+    let busy = false;
+    let saving = false;
+
+    function validDesign(value) {
+      if (!value || value.fileType !== 'ID_CARD_DESIGN' || (!Array.isArray(value.frontElements) && !Array.isArray(value.elements))) {
+        throw new Error('Choose an ID Card Design .json file saved in Design Studio.');
+      }
+      value.frontElements = value.frontElements || value.elements || [];
+      value.backElements = value.backElements || [];
+      value.elements = value.frontElements;
+      return value;
+    }
+    function savedMap() {
+      if (!design || !info) return {};
+      try {
+        return JSON.parse(localStorage.getItem(info.scope + CardDesignRuntime.mappingStorageKey(design, STUDIO_TYPE)) || '{}');
+      } catch (error) {
+        return {};
+      }
+    }
+    function renderRows() {
+      const body = $('mappingRows');
+      body.replaceChildren();
+      $('mappingDesignName').textContent = design ? 'Selected: ' + (design.selectedFileName || design.name || 'ID Card Design') : 'Choose a saved design from your device.';
+      save.disabled = busy || !info || !design;
+      if (!info || !design) return;
+      const elements = CardDesignRuntime.getDataElements(design);
+      elements.forEach(element => {
+        const select = el('select', {});
+        select.setAttribute('aria-label', element.label + ' spreadsheet column');
+        select.add(new Option('Not linked', ''));
+        info.columns.forEach(column => select.add(new Option(column.label, String(column.index))));
+        if (working[element.id] !== undefined && info.columns.some(column => column.index === Number(working[element.id]))) select.value = String(working[element.id]);
+        else delete working[element.id];
+        const sample = el('td');
+        const update = () => {
+          if (select.value === '') delete working[element.id]; else working[element.id] = Number(select.value);
+          const column = info.columns.find(item => String(item.index) === select.value);
+          sample.textContent = column ? column.sample || '(blank)' : '—';
+        };
+        select.onchange = update;
+        update();
+        body.appendChild(el('tr', {}, [
+          el('td', {textContent: element.label + ' — ' + (element.side === 'back' ? 'Back' : 'Front')}),
+          el('td', {}, [select]),
+          sample
+        ]));
+      });
+      if (!elements.length) {
+        body.appendChild(el('tr', {}, [el('td', {colSpan: 3, textContent: 'This design contains only design elements. No column links are required.'})]));
+      }
+    }
+    async function loadInfo(sheetId, hasHeader) {
+      const token = ++request;
+      busy = true;
+      save.disabled = true;
+      setStatus(status, 'Reading worksheet…');
+      try {
+        const next = await call('getDesignMappingInfo', STUDIO_TYPE, settings.spreadsheetUrl || '', sheetId, hasHeader);
+        if (token !== request || !dialog.isConnected) return;
+        info = next;
+        worksheet.replaceChildren(...info.worksheets.map(sheet => new Option(sheet.name, String(sheet.id))));
+        worksheet.value = String(info.sheetId);
+        header.checked = info.header;
+        const nextKey = next.spreadsheetId + ':' + next.sheetId;
+        if (sourceKey !== nextKey) working = savedMap();
+        sourceKey = nextKey;
+        busy = false;
+        setStatus(status, '');
+        renderRows();
+      } catch (error) {
+        if (token !== request) return;
+        busy = false;
+        setStatus(status, error.message || String(error), true);
+        save.disabled = true;
+      }
+    }
+    worksheet.onchange = () => loadInfo(worksheet.value, header.checked);
+    header.onchange = () => loadInfo(worksheet.value, header.checked);
+    fileInput.onchange = async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      try {
+        const next = validDesign(JSON.parse(await file.text()));
+        next.selectedFileName = file.name;
+        next.name = String(next.name || '').trim() || file.name.replace(/\.json$/i, '');
+        design = next;
+        working = savedMap();
+        setStatus(status, '');
+        renderRows();
+      } catch (error) {
+        setStatus(status, error.message || String(error), true);
+      }
+    };
+    $('mappingCancel').onclick = () => { if (!saving) { request++; dialog.close(); } };
+    dialog.addEventListener('cancel', event => { event.preventDefault(); $('mappingCancel').onclick(); });
+    save.onclick = async () => {
+      if (busy || !info || !design) return;
+      busy = saving = true;
+      [save, worksheet, header, fileInput].forEach(node => { node.disabled = true; });
+      setStatus(status, 'Saving design mapping…');
+      try {
+        // Make sure browser storage works before committing the spreadsheet connection.
+        localStorage.setItem(STUDIO_SCOPE + 'mapping_preflight', JSON.stringify(design));
+        localStorage.removeItem(STUDIO_SCOPE + 'mapping_preflight');
+        const fields = CardDesignRuntime.getDataElements(design)
+          .filter(element => working[element.id] !== undefined)
+          .map(element => ({id: element.id, type: element.type, columnIndex: working[element.id]}));
+        const result = await call('saveDesignMapping', STUDIO_TYPE, {
+          spreadsheetUrl: settings.spreadsheetUrl || '',
+          sheetId: info.sheetId,
+          header: header.checked,
+          fields: fields,
+          layoutToken: info.layoutToken
+        });
+        const map = {};
+        result.fields.forEach(f => { map[f.id] = f.columnIndex; });
+        CardDesignRuntime.applyColumnMapping(design, map);
+        localStorage.setItem(result.scope + 'active_' + STUDIO_TYPE + '_card_design', JSON.stringify(design));
+        localStorage.setItem(result.scope + CardDesignRuntime.mappingStorageKey(design, STUDIO_TYPE), JSON.stringify(map));
+        saving = false;
+        dialog.close();
+        reopen();
+      } catch (error) {
+        busy = saving = false;
+        [save, worksheet, header, fileInput].forEach(node => { node.disabled = false; });
+        setStatus(status, error.message || String(error), true);
+      }
+    };
+    dialog.showModal();
+    renderRows();
+    await loadInfo();
+  }
+
+  // ---------- Photo adjuster (used by the camera window and by uploads) ----------
+  /**
+   * Shows `source` (an image or canvas) in a 3 : 4 photo frame on `canvas`, with an oval
+   * head guide. Drag to move, wheel or zoom() to resize. Nothing is cropped automatically:
+   * the person decides what is in the frame. Self-contained, because the camera window
+   * receives it as text.
+   */
+  function photoAdjuster(canvas, source) {
+    var OUT_W = 450, OUT_H = 600;
+    var srcW = source.naturalWidth || source.width, srcH = source.naturalHeight || source.height;
+    canvas.width = OUT_W;
+    canvas.height = OUT_H;
+    var ctx = canvas.getContext('2d');
+    var cover = Math.max(OUT_W / srcW, OUT_H / srcH);
+    var contain = Math.min(OUT_W / srcW, OUT_H / srcH);
+    var minScale = contain * 0.9, maxScale = cover * 4;
+    var scale = cover, cx = srcW / 2, cy = srcH / 2;
+    function clamp() {
+      scale = Math.max(minScale, Math.min(maxScale, scale));
+      var visW = OUT_W / scale, visH = OUT_H / scale;
+      // While the photo is larger than the frame, keep the frame on the photo; when smaller, center it.
+      cx = visW >= srcW ? srcW / 2 : Math.max(visW / 2, Math.min(srcW - visW / 2, cx));
+      cy = visH >= srcH ? srcH / 2 : Math.max(visH / 2, Math.min(srcH - visH / 2, cy));
+    }
+    function paint(withGuide) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, OUT_W, OUT_H);
+      ctx.setTransform(scale, 0, 0, scale, OUT_W / 2 - cx * scale, OUT_H / 2 - cy * scale);
+      ctx.drawImage(source, 0, 0, srcW, srcH);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (!withGuide) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([14, 10]);
+      ctx.shadowColor = 'rgba(0,0,0,.55)';
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.ellipse(OUT_W / 2, OUT_H * 0.41, OUT_W * 0.27, OUT_H * 0.29, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    function draw() { clamp(); paint(true); }
+    var dragging = null;
+    canvas.style.touchAction = 'none';
+    canvas.style.cursor = 'grab';
+    canvas.addEventListener('pointerdown', function (event) {
+      dragging = {x: event.clientX, y: event.clientY, cx: cx, cy: cy};
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = 'grabbing';
+    });
+    canvas.addEventListener('pointermove', function (event) {
+      if (!dragging) return;
+      var ratio = canvas.width / canvas.clientWidth;
+      cx = dragging.cx - (event.clientX - dragging.x) * ratio / scale;
+      cy = dragging.cy - (event.clientY - dragging.y) * ratio / scale;
+      draw();
+    });
+    canvas.addEventListener('pointerup', function () { dragging = null; canvas.style.cursor = 'grab'; });
+    canvas.addEventListener('wheel', function (event) {
+      event.preventDefault();
+      scale *= event.deltaY < 0 ? 1.08 : 1 / 1.08;
+      draw();
+      if (api.onzoom) api.onzoom();
+    }, {passive: false});
+    var api = {
+      /** Starting view: frame filled, keeping more of the top of the photo (where heads are). */
+      reset: function () {
+        scale = cover;
+        var visH = OUT_H / scale;
+        cx = srcW / 2;
+        cy = (srcH - visH) * 0.2 + visH / 2;
+        draw();
+      },
+      /** The whole photo inside the frame: nothing is cut off. */
+      fitWhole: function () { scale = contain; cx = srcW / 2; cy = srcH / 2; draw(); },
+      /** 0 = smallest (whole photo with margin), 100 = largest. */
+      getZoom: function () { return Math.round(Math.log(scale / minScale) / Math.log(maxScale / minScale) * 100); },
+      setZoom: function (value) { scale = minScale * Math.pow(maxScale / minScale, Number(value) / 100); draw(); },
+      toDataURL: function () {
+        clamp();
+        paint(false);
+        var data = canvas.toDataURL('image/jpeg', 0.92);
+        paint(true);
+        return data;
+      }
+    };
+    api.reset();
+    return api;
+  }
+
+  // ---------- Camera popup (one person, or several in a row) ----------
+  const safeJson = value => JSON.stringify(value).replace(/</g, '\\u003c');
+  const CAMERA_HTML = (title, labels) => `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${CardDesignRuntime.escapeHtml(title)}</title>
+<style>
+*{box-sizing:border-box}
+body{min-height:100vh;margin:0;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:Arial,sans-serif;color:#fff;background:#111827}
+h1{margin:0;font-size:26px;text-align:center}
+#progress{margin:0;color:#cbd5e1;font-size:13px}
+select{width:100%;max-width:560px;padding:10px;color:#fff;background:#202938;border:1px solid #4b5563;border-radius:7px}
+.frame{position:relative;width:330px;height:440px;max-width:90vw;max-height:58vh;aspect-ratio:3/4;overflow:hidden;background:#000;border:2px solid #4b5563;border-radius:12px}
+video,canvas{display:block;width:100%;height:100%;object-fit:cover}
+.guide{position:absolute;inset:0;pointer-events:none}
+.guide ellipse{fill:none;stroke:rgba(255,255,255,.95);stroke-width:1.2;stroke-dasharray:4 3;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.7))}
+#hint{margin:0;color:#e5e7eb;font-size:13px;text-align:center}
+.adjust{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:13px}
+.adjust input[type=range]{width:170px}
+.adjust button{min-width:0;padding:7px 10px;background:#374151}
+.actions{display:flex;flex-wrap:wrap;justify-content:center;gap:9px}
+button{min-width:110px;padding:10px 14px;color:#fff;border:0;border-radius:7px;font-weight:700;cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+#capture{background:#7141c6}#retake{background:#e67e22}#save{background:#1f883d}#skip{background:#475467}#cancel{background:#6b7280}
+#status{min-height:18px;margin:0;color:#fdba74;text-align:center;font-size:13px}
+[hidden]{display:none!important}
+</style></head><body>
+<h1 id="who"></h1>
+<p id="progress"></p>
+<select id="cameraSelect" disabled><option value="">Loading cameras...</option></select>
+<div class="frame">
+  <video id="video" autoplay playsinline muted></video>
+  <svg id="liveGuide" class="guide" viewBox="0 0 30 40" preserveAspectRatio="none" aria-hidden="true"><ellipse cx="15" cy="16.4" rx="8.1" ry="11.6"/></svg>
+  <canvas id="adjust" hidden aria-label="Captured photo. Drag to move."></canvas>
+</div>
+<p id="hint">Place the whole head inside the oval, then capture.</p>
+<div id="adjustTools" class="adjust" hidden>
+  <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+  <input id="zoom" type="range" min="0" max="100" aria-label="Zoom">
+  <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+  <button id="fitWhole" type="button">Fit whole photo</button>
+  <button id="resetView" type="button">Reset</button>
+</div>
+<p id="status">Allow camera access when prompted, then choose a camera.</p>
+<div class="actions">
+<button id="capture" disabled>Capture Photo</button>
+<button id="retake" hidden>Retake</button>
+<button id="save" disabled>Save Photo</button>
+<button id="skip" hidden>Skip</button>
+<button id="cancel">Close</button>
+</div>
+<script>
+${photoAdjuster.toString()}
+const QUEUE = ${safeJson(labels)};
+const $ = id => document.getElementById(id);
+const video = $('video'), adjustCanvas = $('adjust'), select = $('cameraSelect'), status = $('status');
+let stream = null, adjuster = null, index = 0, saving = false;
+function stopStream() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
+function showPerson() {
+  $('who').textContent = QUEUE[index];
+  $('progress').textContent = QUEUE.length > 1 ? 'Person ' + (index + 1) + ' of ' + QUEUE.length : '';
+  $('save').textContent = QUEUE.length > 1 && index < QUEUE.length - 1 ? 'Save & Next' : 'Save Photo';
+  $('skip').hidden = QUEUE.length < 2;
+}
+function showCapture(captured) {
+  adjustCanvas.hidden = !captured; video.hidden = captured; $('liveGuide').style.display = captured ? 'none' : '';
+  $('adjustTools').hidden = !captured;
+  $('hint').textContent = captured ? 'Drag to move and zoom so the whole head is inside the oval.' : 'Place the whole head inside the oval, then capture.';
+  $('capture').hidden = captured; $('retake').hidden = !captured; $('save').disabled = !captured;
+  if (!captured) adjuster = null;
+}
+function next() {
+  index++;
+  if (index >= QUEUE.length) { stopStream(); window.close(); return; }
+  status.textContent = ''; showCapture(false); showPerson();
+}
+async function startCamera(deviceId) {
+  stopStream();
+  $('capture').disabled = true;
+  status.textContent = 'Starting camera...';
+  const size = {width: {ideal: 1920}, height: {ideal: 1080}};
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({video: deviceId ? Object.assign({deviceId: {exact: deviceId}}, size) : size, audio: false});
+    video.srcObject = stream;
+    await video.play();
+    const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    if (!cameras.length) throw new Error('No camera was found. Connect a camera and reopen this window.');
+    select.replaceChildren(...cameras.map((c, i) => new Option(c.label || 'Camera ' + (i + 1), c.deviceId)));
+    select.value = stream.getVideoTracks()[0].getSettings().deviceId || deviceId || '';
+    select.disabled = cameras.length < 2;
+    $('capture').disabled = false;
+    status.textContent = '';
+  } catch (error) {
+    select.replaceChildren(new Option('Camera unavailable', ''));
+    select.disabled = true;
+    status.textContent = 'Camera error: ' + (error.message || error);
+  }
+}
+function syncZoom() { if (adjuster) $('zoom').value = adjuster.getZoom(); }
+select.onchange = () => { showCapture(false); startCamera(select.value); };
+$('capture').onclick = () => {
+  if (!video.videoWidth) return;
+  // Keep the whole camera picture, so the head can be fitted even if it was near the edge.
+  const still = document.createElement('canvas');
+  still.width = video.videoWidth; still.height = video.videoHeight;
+  still.getContext('2d').drawImage(video, 0, 0);
+  showCapture(true);
+  adjuster = photoAdjuster(adjustCanvas, still);
+  adjuster.onzoom = syncZoom;
+  syncZoom();
+};
+$('zoom').oninput = () => adjuster && adjuster.setZoom($('zoom').value);
+$('zoomIn').onclick = () => { if (adjuster) { adjuster.setZoom(Math.min(100, adjuster.getZoom() + 5)); syncZoom(); } };
+$('zoomOut').onclick = () => { if (adjuster) { adjuster.setZoom(Math.max(0, adjuster.getZoom() - 5)); syncZoom(); } };
+$('fitWhole').onclick = () => { if (adjuster) { adjuster.fitWhole(); syncZoom(); } };
+$('resetView').onclick = () => { if (adjuster) { adjuster.reset(); syncZoom(); } };
+$('retake').onclick = () => { status.textContent = ''; showCapture(false); };
+$('skip').onclick = () => { if (!saving) next(); };
+$('save').onclick = () => {
+  if (!adjuster || !window.opener || saving) return;
+  saving = true;
+  $('save').disabled = true;
+  status.textContent = 'Saving photo...';
+  window.opener.postMessage({sessionToken: window.__STUDIO_TOKEN, type: 'STUDIO_CAPTURED_PHOTO', dataUrl: adjuster.toDataURL(), index: index}, '*');
+};
+$('cancel').onclick = () => { stopStream(); window.close(); };
+window.addEventListener('message', event => {
+  if (!event.data || event.data.type !== 'STUDIO_PHOTO_RESULT' || event.source !== window.opener || event.data.index !== index) return;
+  saving = false;
+  if (event.data.success) next();
+  else { $('save').disabled = false; status.textContent = event.data.error || 'Unable to save photo.'; }
+});
+window.addEventListener('beforeunload', stopStream);
+document.addEventListener('keydown', event => {
+  if (event.target.tagName === 'INPUT') return;
+  if (event.key === ' ' && !$('capture').hidden && !$('capture').disabled) { event.preventDefault(); $('capture').click(); }
+  else if (event.key === 'Enter' && !$('save').disabled) { event.preventDefault(); $('save').click(); }
+});
+showPerson();
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) status.textContent = 'This browser does not support camera access.';
+else startCamera('');
+<\/script></body></html>`;
+
+  /**
+   * o: {title, people: [{key, label}], onSave(key, dataUrl) → Promise}
+   * One person = a single photo; several = Save & Next / Skip through the list.
+   */
+  function openCamera(o) {
+    if (!o.people || !o.people.length) return;
+    const popup = window.open('', 'studioCameraWindow', 'width=760,height=820');
+    if (!popup) {
+      toast('Please allow pop-ups to open the camera.', 'error');
+      return;
+    }
+    popup.document.open();
+    popup.document.write(CAMERA_HTML(o.title, o.people.map(person => person.label)));
+    popup.document.close();
+    registerPopup(popup);
+    cameraSession = {popup: popup, people: o.people, onSave: o.onSave};
+  }
+  window.addEventListener('message', event => {
+    if (!event.data || event.data.type !== 'STUDIO_CAPTURED_PHOTO' || !cameraSession || event.source !== cameraSession.popup) return;
+    const session = cameraSession;
+    const index = Number(event.data.index);
+    const person = session.people[index];
+    const reply = (success, error) => {
+      if (!session.popup.closed) session.popup.postMessage({type: 'STUDIO_PHOTO_RESULT', success: success, error: error, index: index}, '*');
+    };
+    if (!person) return reply(false, 'Unknown person.');
+    Promise.resolve()
+      .then(() => session.onSave(person.key, event.data.dataUrl))
+      .then(() => reply(true), error => reply(false, error.message || String(error)));
+  });
+
+  /**
+   * Lets the person fit the whole head into the 3 : 4 photo frame before an uploaded
+   * photo is saved. Resolves to a JPEG data URL, or null when cancelled.
+   */
+  function adjustPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+      image.onload = () => {
+        // Very large photos are reduced first so moving and zooming stay smooth.
+        const scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight));
+        const source = document.createElement('canvas');
+        source.width = Math.round(image.naturalWidth * scale);
+        source.height = Math.round(image.naturalHeight * scale);
+        source.getContext('2d').drawImage(image, 0, 0, source.width, source.height);
+        URL.revokeObjectURL(url);
+        const dialog = makeDialog('adjust-dialog');
+        dialog.innerHTML = '<h2>Adjust photo</h2><p class="muted">Drag to move and zoom so the whole head is inside the oval. Nothing outside the frame is saved.</p>' +
+          '<div style="display:grid;place-items:center;margin:10px 0"><canvas style="width:300px;max-width:100%;aspect-ratio:3/4;border-radius:10px;border:1px solid #d0d5dd;background:#fff" aria-label="Photo. Drag to move."></canvas></div>' +
+          '<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px">' +
+          '<button type="button" class="cancel" data-step="-5" aria-label="Zoom out">−</button><input type="range" min="0" max="100" aria-label="Zoom" style="width:170px">' +
+          '<button type="button" class="cancel" data-step="5" aria-label="Zoom in">+</button><button type="button" class="cancel" data-fit>Fit whole photo</button><button type="button" class="cancel" data-reset>Reset</button></div>' +
+          '<footer><button type="button" class="cancel" data-close>Cancel</button><button type="button" class="save" data-save>Use this photo</button></footer>';
+        dialog.style.width = 'min(420px, 94vw)';
+        const adjuster = photoAdjuster(dialog.querySelector('canvas'), source);
+        const zoom = dialog.querySelector('input[type=range]');
+        const sync = () => { zoom.value = adjuster.getZoom(); };
+        adjuster.onzoom = sync;
+        sync();
+        zoom.oninput = () => adjuster.setZoom(zoom.value);
+        dialog.querySelectorAll('[data-step]').forEach(button => {
+          button.onclick = () => { adjuster.setZoom(Math.max(0, Math.min(100, adjuster.getZoom() + Number(button.dataset.step)))); sync(); };
+        });
+        dialog.querySelector('[data-fit]').onclick = () => { adjuster.fitWhole(); sync(); };
+        dialog.querySelector('[data-reset]').onclick = () => { adjuster.reset(); sync(); };
+        let result = null;
+        dialog.querySelector('[data-save]').onclick = () => { result = adjuster.toDataURL(); dialog.close(); };
+        dialog.querySelector('[data-close]').onclick = () => dialog.close();
+        dialog.addEventListener('close', () => resolve(result));
+        dialog.showModal();
+      };
+      image.src = url;
+    });
+  }
+
+  return {
+    adjustPhoto,
+    call, photo, manifest, photoStates, invalidate, closePhotoCache, setRecordKeys, toast, switchList,
+    renderCardBatch, reopen, carryDesignToScope,
+    openRecordForm, openDesignMapping, openCamera
+  };
+})();
+</script>

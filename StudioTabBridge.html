@@ -1,0 +1,17 @@
+<script>
+(function () {
+  'use strict';
+  // Studio documents are created only by the authenticated tab host (StudioTabs.html).
+  const host = window.parent;
+  if (host === window || !host.IDStudioTabs) throw new Error('Open this page from ID Card Studio.');
+  const bridge = host.IDStudioTabs.connect(window);
+  if (!bridge) throw new Error('Unknown studio frame.');
+  // srcdoc frames share the host's Apps Script transport.
+  window.google = host.google;
+  window.STUDIO_FRAME_ORIGIN = host.location.origin;
+  window.StudioTabsBridge = bridge;
+  window.addEventListener('DOMContentLoaded', function () { bridge.ready(); });
+  // Keyboard shortcuts that belong to the whole app (e.g. Ctrl + Alt + C) work inside every page too.
+  document.addEventListener('keydown', function (event) { bridge.shortcut(event); });
+})();
+</script>

@@ -1,0 +1,718 @@
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+.album-design-card {position:relative;overflow:hidden;box-sizing:border-box;background:#fff;border:1px solid #98a2b3;box-shadow:0 12px 28px rgba(23,32,51,.16)}
+.album-design-card * {box-sizing:border-box}
+.album-lanyard {position:absolute;z-index:999;top:7px;left:50%;width:56px;height:12px;transform:translateX(-50%);border:1px dashed #98a2b3;border-radius:8px;pointer-events:none}
+.album-lanyard.round {top:8px;width:14px;height:14px;border-radius:50%}
+.album-element {position:absolute;min-width:1px;min-height:1px;display:flex;align-items:center;justify-content:center;overflow:visible;transform-origin:center}
+.album-element-text {display:block;width:100%;min-width:0;max-width:100%;max-height:100%;padding:1px 2px;line-height:1.08;white-space:normal;overflow-wrap:anywhere;word-break:normal;overflow:hidden}
+.album-element img {display:block;width:100%;height:100%;object-fit:contain}
+.album-element.album-photo {overflow:hidden;border:1px dashed #7b8ba4;border-radius:7px;background:#f3f6fa}
+.album-element.album-photo img {object-fit:cover}
+.album-photo-placeholder {display:grid;place-items:center;width:100%;height:100%;color:#667085;background:#f3f6fa;font-size:10px;font-weight:750}
+.album-barcode {display:block;width:100%;height:100%}
+.album-qr {display:grid;place-items:center;width:100%;height:100%;background:#fff}
+.album-qr svg {display:block;width:100%;height:100%}
+.album-grade {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px;width:100%;height:100%}
+.album-grade span {display:flex;min-width:0;height:100%;overflow:hidden}
+.album-grade.grade-pair-aligned {grid-auto-rows:max-content;align-items:baseline}
+.album-grade.grade-pair-aligned span {height:auto;align-items:baseline!important}
+.album-transport {display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+.album-transport svg {width:90%;height:90%}
+</style>
+<script>
+window.CardDesignRuntime = (function () {
+  'use strict';
+  /**
+   * Card sizes (short side × long side). Screen pixels use 96 per inch;
+   * printing uses the exact millimetre size.
+   */
+  const PX_PER_INCH = 96;
+  const CARD_SIZES = {
+    cr80: {name: 'CR80', inches: [2.125, 3.375], mm: [53.98, 85.60], note: 'Standard ID card (credit-card size)'},
+    cr79: {name: 'CR79', inches: [2.051, 3.303], mm: [52.1, 83.9], note: 'Slightly smaller, e.g. stickers for access cards'},
+    cr90: {name: 'CR90', inches: [2.37, 3.63], mm: [60.2, 92.1], note: 'Larger ID card'},
+    cr100: {name: 'CR100', inches: [2.63, 3.88], mm: [66.8, 98.5], note: 'Oversize visitor or event badge'},
+    badge43: {name: '3 × 4 in badge', inches: [3, 4], mm: [76.2, 101.6], note: 'Paper or plastic badge for events and visitors'},
+    id2: {name: 'ID-2', inches: [2.91, 4.13], mm: [74, 105], note: 'Large ID document size'}
+  };
+  const PUNCH_LABELS = {none: 'no hole', slot: 'slot', round: 'round hole'};
+  /** Designs saved before sizes existed used one of these four names. */
+  const LEGACY_TYPES = {
+    'portrait-hole': {size: 'cr80', orientation: 'portrait', punch: 'slot'},
+    'landscape-hole': {size: 'cr80', orientation: 'landscape', punch: 'slot'},
+    'portrait-plain': {size: 'cr80', orientation: 'portrait', punch: 'none'},
+    'landscape-plain': {size: 'cr80', orientation: 'landscape', punch: 'none'}
+  };
+  /** The card's format: {size, orientation, punch, customWidth, customHeight} (custom sizes in inches). */
+  function cardFormat(design) {
+    design = design || {};
+    const legacy = LEGACY_TYPES[design.cardType] || LEGACY_TYPES['portrait-hole'];
+    const size = design.cardSize === 'custom' || CARD_SIZES[design.cardSize] ? design.cardSize : legacy.size;
+    const clampInches = (value, fallback) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.max(1, Math.min(8.5, Math.round(number * 1000) / 1000)) : fallback;
+    };
+    return {
+      size: size,
+      orientation: design.cardOrientation === 'landscape' || design.cardOrientation === 'portrait' ? design.cardOrientation : legacy.orientation,
+      punch: PUNCH_LABELS[design.cardPunch] ? design.cardPunch : legacy.punch,
+      customWidth: clampInches(design.customWidth, 2.125),
+      customHeight: clampInches(design.customHeight, 3.375)
+    };
+  }
+  /** Pixel and millimetre size, hole style and a readable label for a design. */
+  function cardSpec(design) {
+    const format = cardFormat(design);
+    let inches, mm, name;
+    if (format.size === 'custom') {
+      // Custom sizes are used exactly as typed (width × height).
+      inches = [format.customWidth, format.customHeight];
+      mm = inches.map(value => Math.round(value * 25.4 * 100) / 100);
+      name = 'Custom';
+    } else {
+      const size = CARD_SIZES[format.size];
+      const landscape = format.orientation === 'landscape';
+      inches = landscape ? [size.inches[1], size.inches[0]] : size.inches.slice();
+      mm = landscape ? [size.mm[1], size.mm[0]] : size.mm.slice();
+      name = size.name;
+    }
+    const width = Math.round(inches[0] * PX_PER_INCH);
+    const height = Math.round(inches[1] * PX_PER_INCH);
+    const direction = width > height ? 'landscape' : 'portrait';
+    const show = number => String(Math.round(number * 1000) / 1000);
+    return {
+      width: width, height: height, widthMm: mm[0], heightMm: mm[1],
+      punch: format.punch, hole: format.punch !== 'none', size: format.size, orientation: direction,
+      inchLabel: show(inches[0]) + ' × ' + show(inches[1]) + ' in',
+      mmLabel: mm[0].toFixed(2) + ' × ' + mm[1].toFixed(2) + ' mm',
+      label: name + ' ' + direction + ', ' + PUNCH_LABELS[format.punch]
+    };
+  }
+  const FONT_SIZE_MIN = 1;
+  const FONT_SIZE_MAX = 72;
+  /** Names of spreadsheet fields (the same names as in Design Studio). */
+  const DATA_LABELS = {
+    fullName: 'Full Name', firstName: 'First Name', middleName: 'Middle Name', lastName: 'Last Name',
+    idNumber: 'ID Number', barcodeNumber: 'Barcode', qrCode: 'QR Code',
+    class: 'Grade Level', section: 'Class / Section', homeroom: 'Homeroom / Advisory', teacherName: 'Teacher Name', transportation: 'Transportation',
+    title: 'Job Title', department: 'Department', campus: 'Campus', buildingRoom: 'Building / Room',
+    email: 'Email', phone: 'Phone', address: 'Address', emergencyContact: 'Emergency Contact', emergencyPhone: 'Emergency Phone',
+    dateOfBirth: 'Date of Birth', issueDate: 'Issue Date', expirationDate: 'Expiration Date', bloodType: 'Blood Type',
+    text: 'Other Column'
+  };
+  /** Elements whose content comes from the design itself, never from a column. */
+  const DESIGN_ONLY_TYPES = ['schoolYear', 'logo', 'image', 'photo', 'signature', 'instructions', 'divider', 'rectangle', 'circle', 'icon'];
+  /** Elements that contain no fitted text. */
+  const NON_TEXT_TYPES = ['signature', 'divider', 'rectangle', 'circle', 'logo', 'image', 'photo', 'barcodeNumber', 'qrCode', 'transportation'];
+  /** Last render arguments per mount, used to re-render both sides for printing. */
+  const renderContexts = new WeakMap();
+
+  function sideElements(design, side) {
+    if (side === 'back') return Array.isArray(design.backElements) ? design.backElements : [];
+    return Array.isArray(design.frontElements) ? design.frontElements : Array.isArray(design.elements) ? design.elements : [];
+  }
+  function allElements(design) {
+    return sideElements(design, 'front').concat(sideElements(design, 'back'));
+  }
+
+  // ---------- Data binding ----------
+  function normalized(value) {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  }
+  function aliases(value) {
+    return String(value || '').split(',').map(normalized).filter(Boolean);
+  }
+  function transportName(value, model) {
+    const target = normalized(value);
+    const rules = model || {};
+    if (!target || aliases(rules.transportNoneValues || 'None, N/A, No Transportation').includes(target)) return 'None';
+    if (aliases(rules.transportBusValues || 'Bus, School Bus').includes(target)) return 'Bus';
+    if (aliases(rules.transportWalkValues || 'Walk, Walking, Walker').includes(target)) return 'Walking';
+    if (aliases(rules.transportPickupValues || 'Pick Up, Pickup, Car, Car Rider, Parent Pickup').includes(target)) return 'Pick Up';
+    return 'None';
+  }
+  function toIndex(value) {
+    const index = value !== undefined && value !== null && value !== '' ? Number(value) : -1;
+    return Number.isInteger(index) && index >= 0 ? index : -1;
+  }
+  /** Column precedence: explicit map → mapping applied to the design → legacy columnIndex. */
+  function mappedColumnIndex(model, options) {
+    if (!model || DESIGN_ONLY_TYPES.includes(model.type)) return -1;
+    if (options && Object.prototype.hasOwnProperty.call(options, 'columnMap')) {
+      return toIndex((options.columnMap || {})[model.id]);
+    }
+    if (Object.prototype.hasOwnProperty.call(model, 'runtimeColumnIndex')) return toIndex(model.runtimeColumnIndex);
+    return toIndex(model.columnIndex);
+  }
+  function hasDataLink(model, options) {
+    return mappedColumnIndex(model, options) >= 0;
+  }
+  /** Returns the mapped cell value, or null when the element is not linked. */
+  function boundValue(model, record, options) {
+    const index = mappedColumnIndex(model, options);
+    if (index < 0) return null;
+    const row = record && Array.isArray(record._row) ? record._row : [];
+    return index < row.length ? String(row[index] == null ? '' : row[index]) : '';
+  }
+  /** Placeholder content shown in Design Studio (options.samples). */
+  const SAMPLE_VALUES = {idNumber: 'ID #: ID Number', barcodeNumber: '123456789', qrCode: 'QR Code', class: 'Level', transportation: 'Bus', section: '12A'};
+  function field(model, record, options) {
+    if (['schoolYear', 'instructions', 'icon'].includes(model.type)) {
+      return model.text || (options.samples && model.type === 'schoolYear' ? 'Enter the academic year, e.g. 2026–2027' : '');
+    }
+    if (options.sampleValues) {
+      const sample = String(options.sampleValues[model.type] || '');
+      if (model.type === 'idNumber') return sample ? 'ID #: ' + sample : '';
+      if (model.type === 'transportation') return transportName(sample, model);
+      return sample;
+    }
+    if (options.samples) return SAMPLE_VALUES[model.type] || DATA_LABELS[model.type] || 'Data';
+    if (options.emptyPreview) return '';
+    const bound = boundValue(model, record, options);
+    if (bound === null) return '';
+    if (model.type === 'idNumber') return bound ? 'ID #: ' + bound : '';
+    if (model.type === 'transportation') return transportName(bound, model);
+    return bound;
+  }
+
+  // ---------- Visual helpers ----------
+  function drawQr(host, value) {
+    if (typeof qrcode !== 'function') {
+      host.textContent = 'QR';
+      return;
+    }
+    try {
+      const qr = qrcode(0, 'M');
+      qr.addData(value || ' ');
+      qr.make();
+      host.innerHTML = qr.createSvgTag({cellSize: 2, margin: 0, scalable: true});
+      const svg = host.querySelector('svg');
+      if (svg) {
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      }
+    } catch (error) {
+      host.textContent = 'Invalid QR';
+    }
+  }
+  function transportIcon(type) {
+    const emoji = {Bus: '🚌', 'Pick Up': '🚗'}[type];
+    if (emoji) return '<div class="album-transport" title="' + type + '"><svg viewBox="0 0 24 24" role="img" aria-label="' + type + '"><text x="12" y="19" text-anchor="middle" font-size="20">' + emoji + '</text></svg></div>';
+    if (type === 'Walking') return '<div class="album-transport" title="Walking"><svg viewBox="0 0 24 24" role="img" aria-label="Walking" fill="#27ae60"><circle cx="12" cy="3.5" r="2"/><path d="M10.2 7.1c.8-.7 2.8-.7 3.6 0l1.6 1.7c.8.8 1.8 1.3 3 1.4l-.2 2c-1.7-.1-3.2-.8-4.4-2l-.3-.3-.5 3 2.3 2.4V22h-2.2v-5.7l-2-1.9-1 3.2L7.7 22H5.2l2.9-5.4 1.1-5.8-1.4 1.4c-.8.8-1.8 1.3-2.9 1.5l-.4-2c.8-.2 1.4-.5 2-1.1l3.7-3.5z"/></svg></div>';
+    return '';
+  }
+  function clampFontSize(value, fallback) {
+    const number = Number(value);
+    return Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, Number.isFinite(number) ? number : fallback || 12));
+  }
+  function normalizeTypography(design) {
+    allElements(design).forEach(model => {
+      if (!model) return;
+      if (model.type === 'class') {
+        model.classLabelSize = clampFontSize(model.classLabelSize, 12);
+        model.classValueSize = clampFontSize(model.classValueSize, 12);
+      } else if (!NON_TEXT_TYPES.includes(model.type)) {
+        model.fontSize = clampFontSize(model.fontSize, 12);
+      }
+    });
+    return design;
+  }
+
+  /**
+   * Shrinks text until it fits its box; maxFontSize is the designer's size.
+   * Self-contained: the print preview window re-uses it via toString().
+   */
+  function fitTextToBox(host, text, maxFontSize, preferredAlign) {
+    if (!host || !text || !String(text.textContent || '').trim()) return;
+    text.dataset.fitMaxFontSize = String(maxFontSize || 12);
+    text.dataset.fitAlign = preferredAlign || '';
+    text.dataset.fitSelf = host === text ? 'true' : 'false';
+    const applyFit = function () {
+      const max = Math.max(1, Number(maxFontSize) || 12);
+      const availableWidth = host.clientWidth;
+      // Grade segments size to their text, so measure against the grade box.
+      const gradeBox = host === text && host.parentElement && host.parentElement.classList.contains('album-grade') ? host.parentElement : null;
+      const availableHeight = gradeBox ? gradeBox.clientHeight : host.clientHeight;
+      if (availableWidth < 1 || availableHeight < 1) return;
+      Object.assign(text.style, {
+        maxWidth: '100%', maxHeight: 'none', overflow: 'visible', flexShrink: '0', boxSizing: 'border-box',
+        letterSpacing: 'normal', wordSpacing: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal',
+        textAlign: preferredAlign || text.style.textAlign || 'center', textAlignLast: 'auto'
+      });
+      const heightLimit = Math.max(1, availableHeight - (gradeBox ? 0 : 1));
+      const fits = () => text.scrollWidth <= availableWidth && text.scrollHeight <= heightLimit;
+      text.style.fontSize = max + 'px';
+      if (!fits()) {
+        let low = 0.1;
+        let high = max;
+        let best = low;
+        for (let pass = 0; pass < 18; pass++) {
+          const candidate = (low + high) / 2;
+          text.style.fontSize = candidate + 'px';
+          if (fits()) { best = candidate; low = candidate; } else high = candidate;
+        }
+        text.style.fontSize = Math.max(0.1, Math.floor(best * 100) / 100) + 'px';
+      }
+    };
+    applyFit();
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (text.isConnected) applyFit(); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (text.isConnected) applyFit(); });
+  }
+  function fitDataElement(node, model) {
+    if (NON_TEXT_TYPES.includes(model.type)) return;
+    if (model.type === 'class') {
+      const segments = node.querySelectorAll('.album-grade span');
+      fitTextToBox(segments[0], segments[0], Number(model.classLabelSize || 12), '');
+      fitTextToBox(segments[1], segments[1], Number(model.classValueSize || 12), '');
+      return;
+    }
+    fitTextToBox(node, node.querySelector('.album-element-text'), Number(model.fontSize || 12), model.align || 'center');
+  }
+
+  function gradeSegment(text, model, prefix, defaults) {
+    const span = document.createElement('span');
+    span.textContent = text;
+    Object.assign(span.style, {
+      fontFamily: model[prefix + 'Font'] || 'Segoe UI, Arial, sans-serif',
+      fontSize: Number(model[prefix + 'Size'] || 12) + 'px',
+      color: model[prefix + 'Color'] || defaults.color,
+      fontWeight: model[prefix + 'Weight'] || defaults.weight,
+      fontStyle: model[prefix + 'Italic'] ? 'italic' : 'normal',
+      justifyContent: model[prefix + 'Align'] || defaults.align,
+      alignItems: model[prefix + 'VerticalAlign'] || 'center'
+    });
+    return span;
+  }
+
+  function renderElement(model, design, record, options) {
+    const node = document.createElement('div');
+    node.className = 'album-element' + (model.type === 'photo' ? ' album-photo' : '');
+    Object.assign(node.style, {
+      left: Number(model.x || 0) + 'px', top: Number(model.y || 0) + 'px',
+      width: Number(model.w || 20) + 'px', height: Number(model.h || 18) + 'px',
+      zIndex: String(model.z || 1),
+      color: model.color || '#111827',
+      backgroundColor: model.backgroundColor || 'transparent',
+      borderColor: model.borderColor || '#667085',
+      borderStyle: Number(model.borderWidth || 0) > 0 ? 'solid' : 'none',
+      borderWidth: Number(model.borderWidth || 0) + 'px',
+      opacity: String(model.opacity === undefined ? 1 : model.opacity),
+      fontSize: Number(model.fontSize || 12) + 'px',
+      fontWeight: model.fontWeight || '400',
+      fontFamily: model.fontFamily || 'Segoe UI, Arial, sans-serif',
+      fontStyle: model.italic ? 'italic' : 'normal',
+      textDecoration: [model.underline ? 'underline' : '', model.strike ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+      textAlign: model.align || 'center',
+      justifyContent: model.align === 'left' ? 'flex-start' : model.align === 'right' ? 'flex-end' : 'center',
+      alignItems: model.verticalAlign || 'center',
+      transform: 'rotate(' + Number(model.rotation || 0) + 'deg)'
+    });
+    const addImage = (src, alt, sample) => {
+      if (!src) {
+        if (options.samples) node.textContent = sample;
+        return;
+      }
+      const image = document.createElement('img');
+      image.src = src;
+      image.alt = alt;
+      node.appendChild(image);
+    };
+
+    if (['divider', 'rectangle', 'circle'].includes(model.type)) {
+      node.style.borderRadius = model.type === 'circle' ? '50%' : '0';
+    } else if (model.type === 'logo') {
+      addImage(model.imageData || design.logoData, 'Card logo', 'LOGO');
+    } else if (model.type === 'image' || model.type === 'signature') {
+      addImage(model.imageData, model.type === 'signature' ? 'Signature' : 'Card image', model.type === 'signature' ? 'SIGNATURE' : 'IMAGE');
+    } else if (model.type === 'photo') {
+      if (options.photoData) {
+        addImage(options.photoData, 'ID photo');
+        // Fit: 'cover' fills the frame (edges may be cropped), 'contain' shows the whole photo.
+        // Focus: which part stays visible when cropping (top keeps faces in view).
+        const image = node.querySelector('img');
+        image.style.objectFit = model.photoFit === 'contain' ? 'contain' : 'cover';
+        image.style.objectPosition = 'center ' + (['top', 'bottom'].includes(model.photoFocus) ? model.photoFocus : 'center');
+      }
+      else {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'album-photo-placeholder';
+        placeholder.textContent = options.samples ? 'PHOTO' : options.emptyPreview ? '' : options.photoLoading ? 'LOADING...' : options.photoError ? 'PHOTO ERROR' : 'NO PHOTO';
+        node.appendChild(placeholder);
+      }
+    } else if (model.type === 'barcodeNumber') {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.classList.add('album-barcode');
+      node.appendChild(svg);
+      const value = field(model, record, options);
+      if (value && typeof JsBarcode === 'function') {
+        try {
+          JsBarcode(svg, value, {format: 'CODE128', width: 1.25, height: Math.max(18, Number(model.h || 40)), displayValue: false, margin: 0});
+        } catch (error) { /* invalid barcode data: leave blank */ }
+      }
+    } else if (model.type === 'qrCode') {
+      const qr = document.createElement('div');
+      qr.className = 'album-qr';
+      node.appendChild(qr);
+      const value = field(model, record, options);
+      if (value) drawQr(qr, value);
+    } else if (model.type === 'class') {
+      const box = document.createElement('div');
+      box.className = 'album-grade';
+      const label = gradeSegment(options.samples || options.sampleValues || (!options.emptyPreview && hasDataLink(model, options)) ? 'Grade' : '', model, 'classLabel', {color: '#185adb', weight: '700', align: 'flex-end'});
+      const value = gradeSegment(field(model, record, options), model, 'classValue', {color: '#111827', weight: '900', align: 'flex-start'});
+      const vertical = model.classLabelVerticalAlign || 'center';
+      if (vertical === (model.classValueVerticalAlign || 'center')) {
+        box.classList.add('grade-pair-aligned');
+        box.style.alignContent = vertical === 'flex-start' ? 'start' : vertical === 'flex-end' ? 'end' : 'center';
+        [label, value].forEach(span => { span.style.height = 'auto'; span.style.alignItems = 'baseline'; });
+      }
+      box.append(label, value);
+      node.appendChild(box);
+    } else if (model.type === 'transportation') {
+      node.innerHTML = transportIcon(field(model, record, options));
+    } else {
+      const text = document.createElement('span');
+      text.className = 'album-element-text';
+      text.textContent = field(model, record, options);
+      text.style.textAlign = model.align || 'center';
+      if (model.type === 'instructions') text.style.whiteSpace = 'pre-wrap';
+      node.appendChild(text);
+    }
+    return node;
+  }
+
+  /**
+   * Renders one card side into container.
+   * options: {side, recordId, photoData, photoLoading, photoError, emptyPreview,
+   *           samples (placeholder labels), sampleValues ({type: value}), columnMap}
+   */
+  function render(container, design, record, options) {
+    if (!container || !design) return null;
+    normalizeTypography(design);
+    record = record || {};
+    options = Object.assign({}, options);
+    if (window.StudioReliability && StudioReliability.photoStates.get(String(record.recordKey || '')) === 'failed') options.photoError = true;
+    const side = options.side === 'back' ? 'back' : 'front';
+    const spec = cardSpec(design);
+    renderContexts.set(container, {design: design, record: record, options: options});
+    container.innerHTML = '';
+
+    const card = document.createElement('div');
+    card.className = 'album-design-card ' + (spec.width > spec.height ? 'album-landscape' : 'album-portrait');
+    card.dataset.recordId = String(options.recordId || record.recordKey || '');
+    card.dataset.cardSide = side;
+    Object.assign(card.style, {
+      width: spec.width + 'px', height: spec.height + 'px',
+      background: design.cardColor || '#fff',
+      borderColor: design.borderColor || '#98a2b3',
+      borderRadius: Number(design.cornerRadius || 0) + 'px'
+    });
+    if (spec.hole) {
+      const hole = document.createElement('div');
+      hole.className = 'album-lanyard' + (spec.punch === 'round' ? ' round' : '');
+      card.appendChild(hole);
+    }
+    container.appendChild(card);
+    // Elements hidden in Design Studio are never drawn or printed.
+    sideElements(design, side).filter(model => !model.hidden).sort((a, b) => (a.z || 0) - (b.z || 0)).forEach(model => {
+      const node = renderElement(model, design, record, options);
+      card.appendChild(node);
+      fitDataElement(node, model);
+    });
+    return card;
+  }
+
+  // ---------- Mapping ----------
+  function stableHash(value) {
+    let hash = 2166136261;
+    String(value || '').split('').forEach(character => {
+      hash ^= character.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    });
+    return (hash >>> 0).toString(36);
+  }
+  /** Data elements of both sides. Assigns a stable id to legacy elements without one. */
+  function getDataElements(design) {
+    if (!design) return [];
+    const output = [];
+    ['front', 'back'].forEach(side => {
+      sideElements(design, side).forEach((model, index) => {
+        if (!model || DESIGN_ONLY_TYPES.includes(model.type)) return;
+        if (!model.id) model.id = 'element_' + side + '_' + index + '_' + stableHash(String(model.type || 'data') + '|' + String(model.x || 0) + '|' + String(model.y || 0));
+        output.push({id: String(model.id), type: String(model.type || 'text'), label: DATA_LABELS[model.type] || String(model.type || 'Data'), side: side, model: model});
+      });
+    });
+    return output;
+  }
+  function mappingStorageKey(design, studioType) {
+    const elements = getDataElements(design).map(item => item.id + ':' + item.type).join('|');
+    const identity = design && design.designId ? String(design.designId) : stableHash([design && design.cardType, elements].join('|'));
+    return 'id_card_column_mapping_v1_' + String(studioType || 'card').toLowerCase() + '_' + identity;
+  }
+  function loadColumnMapping(design, studioType) {
+    try {
+      const parsed = JSON.parse(STUDIO_STORAGE.getItem(mappingStorageKey(design, studioType)) || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  }
+  function applyColumnMapping(design, columnMap) {
+    const map = columnMap && typeof columnMap === 'object' ? columnMap : {};
+    getDataElements(design).forEach(item => {
+      const index = toIndex(map[item.id]);
+      item.model.runtimeColumnIndex = index >= 0 ? index : '';
+    });
+    return design;
+  }
+  function getLinkedValue(design, record, type) {
+    const model = allElements(design).find(item => item && item.type === type && hasDataLink(item));
+    const value = boundValue(model, record);
+    return value === null ? '' : String(value).trim();
+  }
+  function getPhotoKey(design, record) {
+    return allElements(design).some(model => model.type === 'photo') ? String(record && record.recordKey || '') : '';
+  }
+  /** One form field per mapped column (both sides, de-duplicated). */
+  function linkedFormFields(design, headers, row, columnMap) {
+    if (!design) return [];
+    headers = Array.isArray(headers) ? headers : [];
+    row = Array.isArray(row) ? row : [];
+    const options = columnMap && typeof columnMap === 'object' ? {columnMap: columnMap} : undefined;
+    const used = {};
+    return allElements(design).reduce((fields, model) => {
+      if (!model || DESIGN_ONLY_TYPES.includes(model.type)) return fields;
+      const index = mappedColumnIndex(model, options);
+      if (index < 0 || used[index]) return fields;
+      used[index] = true;
+      fields.push({
+        type: model.type,
+        columnIndex: index,
+        label: DATA_LABELS[model.type] || String(headers[index] || 'Column ' + (index + 1)),
+        value: String(row[index] == null ? '' : row[index])
+      });
+      return fields;
+    }, []);
+  }
+
+  // ---------- Search and labels ----------
+  /** Name search; includeData also searches every other mapped field. */
+  function matchingRecords(design, records, query, includeData) {
+    const normalize = value => String(value == null ? '' : value).trim().toLowerCase().replace(/\s+/g, ' ');
+    const tokens = normalize(query).split(' ').filter(Boolean);
+    if (!tokens.length) return [];
+    return records.filter(record => {
+      const values = ['fullName', 'firstName', 'lastName'].map(type => getLinkedValue(design, record, type) || record[type] || '');
+      if (includeData || !values.some(Boolean)) getDataElements(design).forEach(item => values.push(boundValue(item.model, record) || ''));
+      const text = normalize(values.join(' '));
+      return tokens.every(token => text.includes(token));
+    });
+  }
+  function recordLabel(design, record) {
+    const full = getLinkedValue(design, record, 'fullName') || record.fullName;
+    const parts = ['firstName', 'lastName'].map(type => getLinkedValue(design, record, type) || record[type] || '').filter(Boolean);
+    if (full || parts.length) return full || parts.join(' ');
+    const values = getDataElements(design).map(item => boundValue(item.model, record)).filter(value => value !== null && String(value).trim());
+    return values.slice(0, 2).join(' — ') || 'Record ' + (record._sheetRow || '');
+  }
+
+  // ---------- Printing ----------
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+  function createPrintWindow(message) {
+    const previewWindow = window.open('', 'idCardPrintPreview', 'width=1080,height=900,resizable=yes,scrollbars=yes');
+    if (!previewWindow) {
+      alert('Please allow pop-ups so the ID card print preview can open.');
+      return null;
+    }
+    previewWindow.document.open();
+    previewWindow.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Preparing ID Cards</title><style>*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;font-family:Arial,sans-serif;color:#172033;background:#eef2f7}.loading{width:min(520px,calc(100% - 32px));padding:30px;text-align:center;background:#fff;border:1px solid #d0d5dd;border-radius:16px;box-shadow:0 18px 45px rgba(23,32,51,.15)}.spinner{width:38px;height:38px;margin:0 auto 16px;border:4px solid #dbe4ef;border-top-color:#185adb;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}h1{margin:0 0 8px;font-size:21px}p{margin:0;color:#667085}</style></head><body><div class="loading"><div class="spinner"></div><h1>Preparing ID cards</h1><p id="printPreparationStatus">' + escapeHtml(message || 'Loading card photos and print data…') + '</p></div></body></html>');
+    previewWindow.document.close();
+    return previewWindow;
+  }
+  function setPrintStatus(printWindow, message) {
+    if (!printWindow || printWindow.closed) return;
+    const status = printWindow.document.getElementById('printPreparationStatus');
+    if (status) status.textContent = message;
+  }
+
+  /** Opens an enlarged preview of every card in container with a side picker. */
+  function printCards(container, options) {
+    options = options || {};
+    const cards = container ? Array.from(container.querySelectorAll('.album-design-card')) : [];
+    if (!cards.length) {
+      if (options.printWindow && !options.printWindow.closed) options.printWindow.close();
+      alert('Please select and display an ID card before printing.');
+      return null;
+    }
+    const context = renderContexts.get(cards[0].parentElement);
+    const spec = cardSpec(context && context.design);
+    const pageWidth = spec.widthMm.toFixed(2) + 'mm';
+    const pageHeight = spec.heightMm.toFixed(2) + 'mm';
+    const dimensionLabel = spec.inchLabel + ' (' + spec.mmLabel + ')';
+    const screenScale = 2;
+    const previewWindow = options.printWindow || createPrintWindow('Preparing print preview…');
+    if (!previewWindow || previewWindow.closed) return null;
+
+    function renderedSide(card, side) {
+      const ctx = renderContexts.get(card.parentElement);
+      if (!ctx) return side === 'front' ? card.outerHTML : '';
+      const holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none';
+      document.body.appendChild(holder);
+      try {
+        const output = render(holder, ctx.design, ctx.record, Object.assign({}, ctx.options, {side: side}));
+        return output ? output.outerHTML : '';
+      } finally {
+        holder.remove();
+      }
+    }
+    const cardHtml = cards.map((card, index) =>
+      '<div class="preview-card-wrap" data-record-index="' + index + '" data-print-side="front">' + renderedSide(card, 'front') + '</div>' +
+      '<div class="preview-card-wrap" data-record-index="' + index + '" data-print-side="back">' + renderedSide(card, 'back') + '</div>'
+    ).join('');
+
+    previewWindow.document.open();
+    previewWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Print Preview</title>
+<style>
+@page {size:${pageWidth} ${pageHeight};margin:0}
+* {box-sizing:border-box}
+html,body {margin:0}
+[hidden] {display:none!important}
+.preview-toolbar {position:sticky;top:0;z-index:10000;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 20px;color:#fff;background:#172033;box-shadow:0 2px 10px rgba(0,0,0,.25);font-family:Arial,sans-serif}
+.preview-title {display:flex;flex-direction:column;gap:3px}
+.preview-title strong {font-size:16px}
+.preview-title span {color:#dce6f3;font-size:11px}
+.preview-actions {display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:9px}
+.side-picker {display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}
+.side-picker select {padding:9px 32px 9px 10px;border:1px solid #98a2b3;border-radius:7px;background:#fff;color:#172033;font-weight:700}
+.print-button {padding:10px 18px;color:#fff;background:#185adb;border:0;border-radius:7px;font-weight:700;cursor:pointer}
+.print-help {padding:10px 18px;color:#344054;background:#fff6d8;border-bottom:1px solid #e6d9a4;font:600 12px/1.45 Arial,sans-serif;text-align:center}
+.preview-stage {min-height:calc(100vh - 110px);padding:36px;display:flex;flex-direction:column;align-items:center;gap:34px;background:#dfe5ec}
+.preview-card-wrap {flex:0 0 auto;width:${spec.width * screenScale}px;height:${spec.height * screenScale}px}
+.album-design-card {position:relative!important;width:${pageWidth}!important;height:${pageHeight}!important;margin:0!important;padding:0!important;overflow:hidden!important;background:#fff;border:0!important;box-shadow:0 12px 30px rgba(0,0,0,.28);transform:scale(${screenScale});transform-origin:top left}
+.album-design-card * {box-sizing:border-box}
+.album-lanyard {position:absolute;z-index:999;top:7px;left:50%;width:56px;height:12px;transform:translateX(-50%);border-radius:8px}
+.album-lanyard.round {top:8px;width:14px;height:14px;border-radius:50%}
+.album-element {position:absolute;min-width:1px;min-height:1px;display:flex;align-items:center;justify-content:center;overflow:visible;transform-origin:center}
+.album-element-text {display:block;width:100%;min-width:0;max-width:100%;max-height:100%;padding:1px 2px;line-height:1.08;white-space:normal;overflow-wrap:anywhere;word-break:normal;overflow:hidden}
+.album-element img {display:block;width:100%;height:100%;object-fit:contain}
+.album-element.album-photo {overflow:hidden;border-radius:7px}
+.album-element.album-photo img {object-fit:cover}
+.album-photo-placeholder {display:grid;place-items:center;width:100%;height:100%}
+.album-barcode {display:block;width:100%;height:100%}
+.album-qr {display:grid;place-items:center;width:100%;height:100%;background:#fff}
+.album-qr svg {display:block;width:100%;height:100%}
+.album-grade {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px;width:100%;height:100%}
+.album-grade span {display:flex;min-width:0;height:100%;overflow:hidden}
+.album-grade.grade-pair-aligned {grid-auto-rows:max-content;align-items:baseline}
+.album-transport {display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+.album-transport svg {width:90%;height:90%}
+@media(max-width:760px) {.preview-toolbar {align-items:flex-start;flex-direction:column}.preview-actions {justify-content:flex-start}.preview-stage {padding:24px 8px;overflow:auto}}
+@media print {
+  html,body {width:${pageWidth}!important;margin:0!important;padding:0!important;overflow:visible!important;background:#fff!important}
+  body {-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .preview-toolbar,.print-help {display:none!important}
+  .preview-stage {min-height:0!important;padding:0!important;display:block!important;background:#fff!important}
+  .preview-card-wrap {width:${pageWidth}!important;height:${pageHeight}!important;margin:0!important;overflow:hidden!important;page-break-after:always;break-after:page}
+  .preview-card-wrap:last-child {page-break-after:auto;break-after:auto}
+  .album-design-card {width:${pageWidth}!important;height:${pageHeight}!important;transform:none!important;border-radius:0!important;box-shadow:none!important}
+  .album-lanyard {border-color:transparent!important}
+}
+</style>
+</head>
+<body>
+<div class="preview-toolbar">
+  <div class="preview-title">
+    <strong>Print Preview</strong>
+    <span>${cards.length} card${cards.length === 1 ? '' : 's'} · ${escapeHtml(spec.label)} · ${dimensionLabel}</span>
+  </div>
+  <div class="preview-actions">
+    <label class="side-picker">Print Side <select id="printSide"><option value="front">Front Side</option><option value="back">Back Side</option><option value="both">Front + Back</option></select></label>
+    <button class="print-button" onclick="requestPrint()">Print / Save as PDF</button>
+  </div>
+</div>
+<div class="print-help">Page layout: <strong>${escapeHtml(spec.label)}</strong>, ${dimensionLabel}. The on-screen preview is enlarged. In the print dialog, choose matching paper dimensions, 100% scale, and no margins or headers/footers. Front + Back creates front/back pages for each record; it does not configure duplex printing. Check one test card before printing a batch.</div>
+<main class="preview-stage">${cardHtml}</main>
+<script>
+${fitTextToBox.toString()}
+const sideSelect = document.getElementById('printSide');
+function fitPrintText() {
+  // Hidden pages cannot be measured, so expose every page for this synchronous pass.
+  const pages = Array.from(document.querySelectorAll('[data-print-side]'));
+  const hidden = pages.map(page => page.hidden);
+  pages.forEach(page => { page.hidden = false; });
+  document.querySelectorAll('[data-fit-max-font-size]').forEach(text => {
+    const host = text.dataset.fitSelf === 'true' ? text : text.closest('.album-element');
+    fitTextToBox(host, text, Number(text.dataset.fitMaxFontSize), text.dataset.fitAlign);
+  });
+  pages.forEach((page, index) => { page.hidden = hidden[index]; });
+}
+function showSelectedSide() {
+  const choice = sideSelect.value;
+  document.querySelectorAll('[data-print-side]').forEach(item => {
+    item.hidden = choice !== 'both' && item.dataset.printSide !== choice;
+  });
+}
+async function requestPrint() {
+  showSelectedSide();
+  await document.fonts.ready;
+  await Promise.all(Array.from(document.images).map(img => img.decode ? img.decode().catch(() => {}) : null));
+  fitPrintText();
+  try { if (typeof window.recordStudioPrintUsage === 'function') window.recordStudioPrintUsage(); } catch (error) {}
+  window.print();
+  showSelectedSide();
+}
+sideSelect.addEventListener('change', () => { showSelectedSide(); fitPrintText(); });
+showSelectedSide();
+fitPrintText();
+if (document.fonts) document.fonts.ready.then(fitPrintText);
+window.addEventListener('beforeprint', fitPrintText);
+<\/script>
+</body>
+</html>`);
+    previewWindow.document.close();
+    // The usage callback runs in this authenticated page; no record content is sent.
+    const usageStudio = String(window.STUDIO_TYPE || '');
+    previewWindow.recordStudioPrintUsage = function () {
+      if (!usageStudio || usageStudio === 'design' || usageStudio === 'control-center') return;
+      try {
+        google.script.run.withSuccessHandler(() => {}).withFailureHandler(() => {}).recordStudioPrintRequest(usageStudio);
+      } catch (error) { /* preview stays usable if the opener disconnects */ }
+    };
+    previewWindow.focus();
+    return previewWindow;
+  }
+
+  return {
+    render: render,
+    renderElement: renderElement,
+    cardSpec: cardSpec,
+    cardFormat: cardFormat,
+    CARD_SIZES: CARD_SIZES,
+    fitElement: fitDataElement,
+    printCards: printCards,
+    createPrintWindow: createPrintWindow,
+    setPrintStatus: setPrintStatus,
+    getPhotoKey: getPhotoKey,
+    getLinkedValue: getLinkedValue,
+    getDataElements: getDataElements,
+    mappingStorageKey: mappingStorageKey,
+    loadColumnMapping: loadColumnMapping,
+    applyColumnMapping: applyColumnMapping,
+    linkedFormFields: linkedFormFields,
+    matchingRecords: matchingRecords,
+    recordLabel: recordLabel,
+    escapeHtml: escapeHtml
+  };
+})();
+</script>

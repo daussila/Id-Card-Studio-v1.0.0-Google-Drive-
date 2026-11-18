@@ -1,0 +1,663 @@
+<!doctype html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control Center</title>
+<style>
+:root {--accent:#185adb;--tint:#e9eef8;--ink:#172033;--muted:#667085;--line:#dce3ec}
+* {box-sizing:border-box}
+[hidden] {display:none!important}
+body {min-height:100vh;margin:0;padding:18px 22px;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);background:linear-gradient(135deg,#f7f9fc,#edf1f7)}
+input,select,button,textarea {font:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+
+/* Header */
+.app-header {display:flex;flex-wrap:wrap;align-items:center;gap:12px 14px;margin-bottom:16px}
+.brand {display:flex;align-items:center;gap:12px;margin-right:auto}
+.mark {display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#185adb}
+.mark svg {width:32px;height:32px}
+.brand h1 {margin:0;font-size:21px}
+.brand p {margin:2px 0 0;color:var(--muted);font-size:12px}
+.pill {display:inline-flex;align-items:center;gap:6px;max-width:320px;padding:6px 11px;overflow:hidden;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+
+/* Buttons */
+.btn {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:8px 13px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer}
+.btn:hover:not(:disabled) {filter:brightness(.93)}
+.btn:disabled {opacity:.5;cursor:not-allowed}
+.btn.ghost {border:1px solid var(--line);background:#fff;color:#344054}
+.btn.danger {background:#b42318}
+.btn.ghost.danger {border-color:#f1c4bf;background:#fff;color:#b42318}
+.btn.small {min-height:30px;padding:4px 10px;font-size:12px}
+.icon-btn {width:38px;padding:0}
+
+/* Summary cards */
+.stats {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.stat {padding:14px 16px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 18px rgba(33,48,73,.05)}
+.stat strong {display:block;font-size:26px;line-height:1.2}
+.stat span {color:var(--muted);font-size:12px}
+
+/* Storage gauge */
+.storage {display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:-4px 0 16px;padding:12px 16px;background:#fff;border:1px solid var(--line);border-radius:12px;font-size:13px}
+.storage strong {white-space:nowrap}
+.storage-bar {flex:1 1 220px;height:10px;overflow:hidden;border-radius:999px;background:#eef2f7}
+.storage-bar span {display:block;height:100%;border-radius:999px;background:#1f883d;transition:width .3s}
+.storage.warn .storage-bar span {background:#d97706}
+.storage.full .storage-bar span {background:#b42318}
+.storage small {flex-basis:100%;color:var(--muted);font-size:12px}
+.storage.full small {color:#b42318;font-weight:600}
+
+/* Main panel */
+.panel {overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(33,48,73,.07)}
+.toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #edf0f4}
+.search {flex:1 1 240px;max-width:360px;min-height:38px;padding:8px 11px;border:1px solid #cfd7e2;border-radius:8px}
+.chips {display:flex;flex-wrap:wrap;gap:6px}
+.chip {padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#f8fafc;color:#344054;font-size:12px;font-weight:600;cursor:pointer}
+.chip[aria-pressed=true] {border-color:var(--accent);background:var(--accent);color:#fff}
+.toolbar .end {display:flex;gap:8px;margin-left:auto}
+.selection-bar {display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 16px;background:#eef4ff;border-bottom:1px solid #c7d7f5;font-size:13px;font-weight:700}
+.selection-bar span {margin-right:auto}
+
+/* Table */
+.table-wrap {overflow:auto}
+table {width:100%;min-width:820px;border-collapse:collapse}
+th,td {padding:10px 12px;border-bottom:1px solid #f0f3f7;text-align:left;vertical-align:middle;font-size:13px}
+th {position:sticky;top:0;z-index:1;background:#f6f8fb;color:#475467;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+th button {padding:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+th button[data-dir]::after {content:attr(data-dir);margin-left:4px}
+td.num,th.num {text-align:right}
+tr.user-row:hover {background:#fafbfd}
+tr.user-row.checked {background:#f2f7ff}
+.check-cell {width:40px}
+.check-cell input {width:17px;height:17px;cursor:pointer}
+.user-cell {display:flex;align-items:center;gap:10px;min-width:0;padding:0;border:0;background:none;color:inherit;text-align:left;cursor:pointer}
+.avatar {display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:50%;background:var(--tint);color:#1748b5;font-size:13px;font-weight:800}
+.user-cell strong {display:block;overflow-wrap:anywhere;font-size:13px}
+.user-cell small {color:var(--muted);font-size:11px}
+.badge {display:inline-block;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:800}
+.badge.Administrator {background:#e0e7ff;color:#3730a3}
+.badge.Enabled {background:#dcfce7;color:#166534}
+.badge.Disabled {background:#fef3c7;color:#92400e}
+.badge.Removed {background:#f2f4f7;color:#475467}
+.when {white-space:nowrap}
+.when small {display:block;color:var(--muted);font-size:11px}
+.row-actions {display:flex;justify-content:flex-end;gap:6px}
+.details td {padding:4px 12px 16px 64px;background:#fafbfd}
+.breakdown {display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.breakdown div {padding:10px 12px;border:1px solid #e6ebf2;border-radius:9px;background:#fff;font-size:12px;line-height:1.6}
+.breakdown b {display:block;margin-bottom:2px;font-size:12px}
+.empty {padding:40px 16px;color:var(--muted);text-align:center}
+.foot {padding:12px 16px;color:var(--muted);font-size:12px;line-height:1.5}
+
+/* Dialogs and toasts */
+dialog {width:min(560px,calc(100vw - 32px));max-height:88vh;padding:24px;overflow:auto;border:1px solid var(--line);border-radius:14px;color:var(--ink);box-shadow:0 20px 60px rgba(23,32,51,.27)}
+dialog::backdrop {background:rgba(23,32,51,.45)}
+dialog h2 {margin:0 0 6px;font-size:20px}
+dialog p {margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.5}
+dialog label {display:block;margin:12px 0 6px;font-size:12px;font-weight:700}
+dialog textarea,dialog input[type=email] {width:100%;padding:9px 11px;border:1px solid #cfd7e2;border-radius:8px}
+dialog footer {display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.parse-result {margin-top:10px;font-size:12px;font-weight:600}
+.parse-result .bad {color:#b42318}
+.toasts {position:fixed;right:18px;bottom:18px;z-index:1000;display:flex;flex-direction:column;gap:8px;max-width:min(380px,calc(100vw - 36px))}
+.toast {padding:11px 14px;border-radius:9px;background:#172033;color:#fff;font-size:13px;font-weight:600;box-shadow:0 10px 26px rgba(15,23,42,.3)}
+.toast.ok {background:#166534}
+.toast.error {background:#b42318}
+#loading {padding:60px 16px;color:var(--muted);text-align:center}
+
+@media(max-width:900px) {
+  body {padding:12px}
+  .stats {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .toolbar .end {margin-left:0}
+  .brand p {display:none}
+}
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M24 4 41 11v12c0 10-7 17-17 22C14 40 7 33 7 23V11Z" fill="#a9c8ff"/><path d="m16 24 6 6 12-13" fill="none" stroke="#185adb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div><h1>Control Center</h1><p>Who can use ID Card Studio, and how it is being used.</p></div>
+  </div>
+  <span id="adminPill" class="pill" title="Current administrator"></span>
+  <button id="helpButton" class="btn ghost icon-btn" type="button" aria-label="Help" title="Help">?</button>
+  <button id="hideButton" class="btn ghost" type="button" title="Hide this tab, e.g. while you present the app. Bring it back with Ctrl + Alt + C.">Hide Control Center</button>
+  <button id="transferButton" class="btn ghost" type="button">⚙ Administrator</button>
+</header>
+
+<div id="loading">Loading users and activity…</div>
+
+<div id="content" hidden>
+  <section class="stats" aria-label="Summary">
+    <div class="stat"><strong id="statUsers">0</strong><span>People with access</span></div>
+    <div class="stat"><strong id="statActive">0</strong><span>Active in the last 7 days</span></div>
+    <div class="stat"><strong id="statPhotos">0</strong><span>Photos saved</span></div>
+    <div class="stat"><strong id="statPrints">0</strong><span>Print requests</span></div>
+  </section>
+
+  <section id="storage" class="storage" aria-live="polite">
+    <strong>App storage</strong>
+    <div class="storage-bar" role="progressbar" aria-label="App storage used" aria-valuemin="0" aria-valuemax="100"><span id="storageFill"></span></div>
+    <span id="storageText"></span>
+    <small id="storageNote"></small>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <input id="search" class="search" type="search" placeholder="Search email…" aria-label="Search users">
+      <div id="chips" class="chips" role="group" aria-label="Filters"></div>
+      <div class="end">
+        <button id="downloadButton" class="btn ghost" type="button">⇩ CSV</button>
+        <button id="refreshButton" class="btn ghost" type="button" aria-label="Refresh">↻</button>
+        <button id="addButton" class="btn" type="button">＋ Add users</button>
+      </div>
+    </div>
+    <div id="selectionBar" class="selection-bar" hidden>
+      <span id="selectionCount"></span>
+      <button class="btn ghost small" type="button" data-bulk="enable"></button>
+      <button class="btn ghost small" type="button" data-bulk="disable"></button>
+      <button class="btn ghost small" type="button" data-bulk="clearUsage"></button>
+      <button class="btn ghost small danger" type="button" data-bulk="remove"></button>
+      <button id="clearSelection" class="btn ghost small" type="button">Clear selection</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th class="check-cell"><input id="selectAll" type="checkbox" aria-label="Select all shown"></th>
+          <th><button type="button" data-sort="email">User</button></th>
+          <th>Access</th>
+          <th><button type="button" data-sort="last">Last activity</button></th>
+          <th class="num"><button type="button" data-sort="openings">Opens</button></th>
+          <th class="num"><button type="button" data-sort="photos">Photos</button></th>
+          <th class="num"><button type="button" data-sort="prints">Prints</button></th>
+          <th class="num">Actions</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="foot">Counts are best effort, not an audit log: they cover page opens, saved photos, and the Print button (cancelled print dialogs still count). No spreadsheet contents, names, photos, or designs are collected. Disabling or removing access stops future use; it never deletes anyone’s spreadsheets, photos, or designs.</p>
+  </section>
+</div>
+
+<dialog id="addDialog" aria-labelledby="addTitle">
+  <h2 id="addTitle">Add users</h2>
+  <p>Paste Google account emails — separated by commas, spaces, or new lines — or import a CSV file. New users get access immediately; no invitation email is sent. Existing accounts keep their current status.</p>
+  <label for="addEmails">Email addresses</label>
+  <textarea id="addEmails" rows="5" placeholder="teacher1@school.org, teacher2@school.org"></textarea>
+  <label for="addFile">Or import a CSV file</label>
+  <input id="addFile" type="file" accept=".csv,.txt,text/csv,text/plain">
+  <div id="parseResult" class="parse-result"></div>
+  <footer><button class="btn ghost" type="button" data-close>Cancel</button><button id="addConfirm" class="btn" type="button" disabled>Add users</button></footer>
+</dialog>
+
+<dialog id="transferDialog" aria-labelledby="transferTitle">
+  <h2 id="transferTitle">Transfer administrator</h2>
+  <p>The new administrator gets this Control Center. You become a regular user with normal access to Card Studio and Design Studio. They must be able to open this web app.</p>
+  <label for="newAdmin">New administrator email</label>
+  <input id="newAdmin" type="email" maxlength="254" autocomplete="off">
+  <label for="confirmAdmin">Type the email again</label>
+  <input id="confirmAdmin" type="email" maxlength="254" autocomplete="off">
+  <footer><button class="btn ghost" type="button" data-close>Cancel</button><button id="transferConfirm" class="btn danger" type="button" disabled>Transfer</button></footer>
+</dialog>
+
+<dialog id="helpDialog" aria-labelledby="helpTitle">
+  <h2 id="helpTitle">Using the Control Center</h2>
+  <p><b>Add users</b> to let them open ID Card Studio. <b>Disable</b> pauses access but keeps them on the list; <b>Remove</b> takes them off the list (their activity history stays until you clear it).</p>
+  <p>Tick users to act on several at once. Click a name to see activity per card list (each user’s lists are their own). Click a column heading to sort.</p>
+  <p><b>Removed</b> users appear only while they still have activity history; <b>Restore</b> gives them access again.</p>
+  <p><b>Hide Control Center</b> hides this tab in your browser, e.g. while presenting the app. Press <b>Ctrl + Alt + C</b> (Ctrl + Option + C on a Mac) to show it again.</p>
+  <footer><button class="btn ghost" type="button" data-close>Close</button></footer>
+</dialog>
+
+<div class="toasts" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  const EMAIL_PATTERN = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i;
+  const WEEK = 7 * 24 * 3600 * 1000;
+  const $ = id => document.getElementById(id);
+  let rows = [];
+  let administrator = '';
+  const selected = new Set();
+  const expanded = new Set();
+  const filter = {query: '', chip: 'all'};
+  const sort = {key: 'last', dir: -1};
+  let pendingEmails = [];
+  let busy = false;
+
+  const call = (name, ...args) => new Promise((resolve, reject) =>
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args));
+  const sum = values => values.reduce((total, count) => total + count, 0);
+  const plural = (count, word) => count + ' ' + word + (count === 1 ? '' : 's');
+  const errorText = error => (error && error.message) || String(error);
+  function toast(message, tone) {
+    const item = document.createElement('div');
+    item.className = 'toast ' + (tone || '');
+    item.textContent = message;
+    document.querySelector('.toasts').appendChild(item);
+    setTimeout(() => item.remove(), tone === 'error' ? 7000 : 3500);
+  }
+  function relative(iso) {
+    if (!iso) return {text: 'Never', exact: ''};
+    const date = new Date(iso);
+    const diff = Date.now() - date.getTime();
+    const minutes = Math.round(diff / 60000);
+    const text = minutes < 1 ? 'Just now' : minutes < 60 ? minutes + ' min ago'
+      : minutes < 1440 ? Math.round(minutes / 60) + ' h ago'
+      : minutes < 2880 ? 'Yesterday'
+      : minutes < 43200 ? Math.round(minutes / 1440) + ' days ago'
+      : date.toLocaleDateString();
+    return {text: text, exact: date.toLocaleString()};
+  }
+
+  // ---------- Data ----------
+  async function load() {
+    const report = await call('adminGetUsageReport');
+    rows = report.rows.map(row => ({
+      email: row.email, access: row.access, first: row.first, last: row.last,
+      totals: row.totals, lists: row.lists || []
+    }));
+    const admin = rows.find(row => row.access === 'Administrator');
+    administrator = admin ? admin.email : '';
+    $('adminPill').textContent = '🛡 ' + administrator;
+    const known = new Set(rows.map(row => row.email));
+    selected.forEach(email => { if (!known.has(email)) selected.delete(email); });
+    $('loading').hidden = true;
+    $('content').hidden = false;
+    if (report.unreadable) toast('Some saved activity counters could not be read.', 'error');
+    renderStats();
+    renderStorage(report.storage);
+    render();
+  }
+  /** Settings storage is limited (500 KB). Activity counters pause before it is full, so user changes always work. */
+  function renderStorage(storage) {
+    if (!storage) { $('storage').hidden = true; return; }
+    const kb = bytes => Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    const percent = Math.min(100, Math.round(storage.totalBytes / storage.limitBytes * 100));
+    $('storageFill').style.width = percent + '%';
+    $('storage').querySelector('[role=progressbar]').setAttribute('aria-valuenow', String(percent));
+    $('storageText').textContent = percent + '% used · activity ' + kb(storage.usageBytes) + ' · users & settings ' + kb(storage.otherBytes) + ' of ' + kb(storage.limitBytes);
+    $('storage').classList.toggle('full', Boolean(storage.usageFull));
+    $('storage').classList.toggle('warn', !storage.usageFull && percent >= 65);
+    $('storageNote').textContent = storage.usageFull
+      ? 'Activity counting has paused to keep room for the user list. Clear old activity (tick users → Clear activity) to resume it. Adding and changing users still works.'
+      : percent >= 65 ? 'Storage is getting full. Clearing old activity frees space.' : '';
+  }
+  function renderStats() {
+    $('statUsers').textContent = rows.filter(row => row.access === 'Enabled' || row.access === 'Administrator').length;
+    $('statActive').textContent = rows.filter(row => row.last && Date.now() - Date.parse(row.last) < WEEK).length;
+    $('statPhotos').textContent = sum(rows.map(row => row.totals.photos));
+    $('statPrints').textContent = sum(rows.map(row => row.totals.prints));
+  }
+
+  // ---------- Filters, sorting, table ----------
+  const CHIPS = [
+    ['all', 'All', () => true],
+    ['Enabled', 'Enabled', row => row.access === 'Enabled'],
+    ['Disabled', 'Disabled', row => row.access === 'Disabled'],
+    ['Removed', 'Removed', row => row.access === 'Removed'],
+    ['active', 'Active this week', row => row.last && Date.now() - Date.parse(row.last) < WEEK],
+    ['never', 'Never visited', row => !row.first]
+  ];
+  function filtered() {
+    const test = (CHIPS.find(chip => chip[0] === filter.chip) || CHIPS[0])[2];
+    const query = filter.query.toLowerCase();
+    const list = rows.filter(row => test(row) && row.email.includes(query));
+    const value = row => sort.key === 'email' ? row.email : sort.key === 'last' ? (row.last || '') : row.totals[sort.key];
+    return list.sort((a, b) => {
+      if (a.access === 'Administrator') return -1;
+      if (b.access === 'Administrator') return 1;
+      const x = value(a), y = value(b);
+      return (x < y ? -1 : x > y ? 1 : 0) * sort.dir || a.email.localeCompare(b.email);
+    });
+  }
+  function renderChips() {
+    const host = $('chips');
+    host.replaceChildren();
+    CHIPS.forEach(([id, label, test]) => {
+      const count = rows.filter(test).length;
+      if (id === 'Removed' && !count && filter.chip !== id) return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chip';
+      button.textContent = label + ' · ' + count;
+      button.setAttribute('aria-pressed', String(filter.chip === id));
+      button.onclick = () => { filter.chip = id; render(); };
+      host.appendChild(button);
+    });
+  }
+  function cell(content, className) {
+    const td = document.createElement('td');
+    if (className) td.className = className;
+    if (content instanceof Node) td.appendChild(content); else td.textContent = content;
+    return td;
+  }
+  function button(label, className, onClick, title) {
+    const node = document.createElement('button');
+    node.type = 'button';
+    node.className = 'btn ghost small ' + (className || '');
+    node.textContent = label;
+    if (title) node.title = title;
+    node.disabled = busy;
+    node.onclick = onClick;
+    return node;
+  }
+  function render() {
+    renderChips();
+    document.querySelectorAll('[data-sort]').forEach(th => {
+      if (th.dataset.sort === sort.key) th.dataset.dir = sort.dir > 0 ? '▲' : '▼'; else delete th.dataset.dir;
+    });
+    const list = filtered();
+    const body = $('rows');
+    body.replaceChildren();
+    if (!list.length) {
+      const td = cell(rows.length ? 'No users match this search or filter.' : 'No users yet. Use “Add users”.', 'empty');
+      td.colSpan = 8;
+      body.appendChild(document.createElement('tr')).appendChild(td);
+    }
+    list.forEach(row => {
+      const isAdmin = row.access === 'Administrator';
+      const tr = document.createElement('tr');
+      tr.className = 'user-row' + (selected.has(row.email) ? ' checked' : '');
+
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.disabled = isAdmin;
+      check.checked = selected.has(row.email);
+      check.setAttribute('aria-label', 'Select ' + row.email);
+      check.title = isAdmin ? 'Use “Clear activity” on this row to reset your own counts' : '';
+      check.onchange = () => {
+        if (check.checked) selected.add(row.email); else selected.delete(row.email);
+        tr.classList.toggle('checked', check.checked);
+        syncSelection();
+      };
+
+      const user = document.createElement('button');
+      user.type = 'button';
+      user.className = 'user-cell';
+      user.setAttribute('aria-expanded', String(expanded.has(row.email)));
+      user.title = 'Show activity per list';
+      user.innerHTML = '<span class="avatar"></span><span><strong></strong><small></small></span>';
+      user.querySelector('.avatar').textContent = row.email.charAt(0).toUpperCase();
+      user.querySelector('strong').textContent = row.email;
+      user.querySelector('small').textContent = (expanded.has(row.email) ? '▾ ' : '▸ ') + 'Details';
+      user.onclick = () => { if (expanded.has(row.email)) expanded.delete(row.email); else expanded.add(row.email); render(); };
+
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + row.access;
+      badge.textContent = row.access;
+
+      const when = relative(row.last);
+      const whenNode = document.createElement('div');
+      whenNode.className = 'when';
+      whenNode.textContent = when.text;
+      whenNode.title = when.exact;
+
+      const actions = document.createElement('div');
+      actions.className = 'row-actions';
+      if (isAdmin) {
+        // The administrator can reset their own counts; their access cannot be changed here.
+        const clear = button('Clear activity', '', () => bulk('clearUsage', [row.email]), 'Reset your own activity counts');
+        clear.disabled = busy || !row.first;
+        actions.appendChild(clear);
+      } else {
+        if (row.access === 'Enabled') actions.appendChild(button('Disable', '', () => bulk('disable', [row.email])));
+        else actions.appendChild(button(row.access === 'Removed' ? 'Restore' : 'Enable', '', () => bulk('enable', [row.email])));
+        if (row.access !== 'Removed') actions.appendChild(button('Remove', 'danger', () => bulk('remove', [row.email]), 'Remove access'));
+      }
+
+      const checkCell = cell(check, 'check-cell');
+      tr.append(checkCell, cell(user), cell(badge), cell(whenNode), cell(String(row.totals.openings), 'num'),
+        cell(String(row.totals.photos), 'num'), cell(String(row.totals.prints), 'num'), cell(actions, 'num'));
+      body.appendChild(tr);
+
+      if (expanded.has(row.email)) {
+        const detail = document.createElement('tr');
+        detail.className = 'details';
+        const td = document.createElement('td');
+        td.colSpan = 8;
+        const grid = document.createElement('div');
+        grid.className = 'breakdown';
+        const first = relative(row.first);
+        const intro = document.createElement('div');
+        intro.innerHTML = '<b>Visits</b>';
+        intro.append('First: ' + (first.exact || 'never'), document.createElement('br'), 'Latest: ' + (relative(row.last).exact || 'never'));
+        grid.appendChild(intro);
+        if (!row.lists.length) {
+          const none = document.createElement('div');
+          none.textContent = 'No activity recorded yet.';
+          grid.appendChild(none);
+        }
+        // Each user's own card lists (personal), plus the Design Studio.
+        row.lists.forEach(item => {
+          const box = document.createElement('div');
+          box.innerHTML = '<b></b>';
+          box.querySelector('b').textContent = item.key === 'design' ? 'Design Studio' : 'List: ' + item.name;
+          box.append('Opened ' + item.open);
+          if (item.key !== 'design') box.append(document.createElement('br'), 'Photos ' + item.photo + ' · Prints ' + item.print);
+          grid.appendChild(box);
+        });
+        td.appendChild(grid);
+        detail.appendChild(td);
+        body.appendChild(detail);
+      }
+    });
+    syncSelection();
+  }
+  function syncSelection() {
+    const list = filtered().filter(row => row.access !== 'Administrator');
+    const chosen = list.filter(row => selected.has(row.email)).length;
+    $('selectAll').checked = list.length > 0 && chosen === list.length;
+    $('selectAll').indeterminate = chosen > 0 && chosen < list.length;
+    const picked = rows.filter(row => selected.has(row.email));
+    $('selectionBar').hidden = !picked.length;
+    $('selectionCount').textContent = plural(picked.length, 'user') + ' selected';
+    const counts = {
+      enable: picked.filter(row => row.access !== 'Enabled').length,
+      disable: picked.filter(row => row.access === 'Enabled').length,
+      clearUsage: picked.filter(row => row.first).length,
+      remove: picked.filter(row => row.access !== 'Removed').length
+    };
+    const labels = {enable: 'Enable', disable: 'Disable', clearUsage: 'Clear activity', remove: 'Remove'};
+    document.querySelectorAll('[data-bulk]').forEach(node => {
+      const count = counts[node.dataset.bulk];
+      node.textContent = labels[node.dataset.bulk] + ' ' + count;
+      node.disabled = busy || !count;
+    });
+  }
+
+  // ---------- Actions ----------
+  const CONFIRM = {
+    disable: count => 'Disable access for ' + plural(count, 'user') + '? They stay on the list and can be enabled again.',
+    remove: count => 'Remove ' + plural(count, 'user') + ' from the approved list? Their spreadsheets, photos, and designs are not deleted.',
+    clearUsage: count => 'Permanently clear the activity history of ' + plural(count, 'user') + '? Their access does not change.'
+  };
+  const DONE = {
+    enable: count => plural(count, 'user') + ' enabled.',
+    disable: count => plural(count, 'user') + ' disabled.',
+    remove: count => plural(count, 'user') + ' removed.',
+    clearUsage: count => 'Activity cleared for ' + plural(count, 'user') + '.'
+  };
+  async function bulk(action, emails) {
+    if (busy || !emails.length) return;
+    if (CONFIRM[action] && !confirm(CONFIRM[action](emails.length))) return;
+    busy = true;
+    syncSelection();
+    try {
+      const result = await call('adminBulkAccess', emails, action);
+      if (emails.length > 1) selected.clear();
+      await load();
+      toast(result.changed ? DONE[action](result.changed) : 'Nothing needed to change.', 'ok');
+    } catch (error) {
+      toast(errorText(error), 'error');
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+  function bulkFromSelection(action) {
+    const picked = rows.filter(row => selected.has(row.email));
+    const eligible = picked.filter(row =>
+      action === 'enable' ? row.access !== 'Enabled' :
+      action === 'disable' ? row.access === 'Enabled' :
+      action === 'clearUsage' ? row.first : row.access !== 'Removed');
+    bulk(action, eligible.map(row => row.email));
+  }
+  function downloadCsv() {
+    const csvCell = value => {
+      let text = String(value == null ? '' : value);
+      if (/^[=+@\-\t\r]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const header = ['Email', 'Access', 'First Visit (UTC)', 'Latest Activity (UTC)', 'Opens', 'Photos', 'Prints', 'By list'];
+    const breakdown = row => row.lists.map(item => (item.key === 'design' ? 'Design Studio' : item.name) + ': ' + item.open + ' opens' +
+      (item.key === 'design' ? '' : ', ' + item.photo + ' photos, ' + item.print + ' prints')).join('; ');
+    const lines = [header, ...filtered().map(row => [row.email, row.access, row.first || '', row.last || '',
+      row.totals.openings, row.totals.photos, row.totals.prints, breakdown(row)])];
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.map(line => line.map(csvCell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'ID-Card-Studio-Users-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  // ---------- Add users ----------
+  /** Pulls email addresses out of any pasted text or CSV; anything with “@” that isn’t valid is reported. */
+  function parseEmails(text) {
+    const tokens = String(text || '').replace(/^\uFEFF/, '').split(/[\s,;"'<>()]+/).map(token => token.trim().toLowerCase()).filter(Boolean);
+    const valid = [];
+    const invalid = [];
+    tokens.forEach(token => {
+      if (EMAIL_PATTERN.test(token) && token.length <= 254) valid.push(token);
+      else if (token.includes('@')) invalid.push(token);
+    });
+    return {valid: Array.from(new Set(valid)), invalid: invalid};
+  }
+  let fileText = '';
+  function updateParse() {
+    const parsed = parseEmails($('addEmails').value + '\n' + fileText);
+    pendingEmails = parsed.valid;
+    const result = $('parseResult');
+    result.replaceChildren();
+    const existing = pendingEmails.filter(email => rows.some(row => row.email === email && row.access !== 'Removed')).length;
+    if (pendingEmails.length) result.append(pendingEmails.length + (pendingEmails.length === 1 ? ' address' : ' addresses') + ' found' + (existing ? ' (' + existing + ' already listed, unchanged)' : '') + '.');
+    if (parsed.invalid.length) {
+      const bad = document.createElement('div');
+      bad.className = 'bad';
+      bad.textContent = 'Not valid: ' + parsed.invalid.slice(0, 5).join(', ') + (parsed.invalid.length > 5 ? '…' : '');
+      result.appendChild(bad);
+    }
+    if (pendingEmails.length > 500) {
+      const bad = document.createElement('div');
+      bad.className = 'bad';
+      bad.textContent = 'Add at most 500 addresses at a time.';
+      result.appendChild(bad);
+    }
+    $('addConfirm').disabled = !pendingEmails.length || pendingEmails.length > 500;
+    $('addConfirm').textContent = pendingEmails.length ? 'Add ' + plural(pendingEmails.length, 'user') : 'Add users';
+  }
+  $('addButton').onclick = () => {
+    $('addEmails').value = '';
+    $('addFile').value = '';
+    fileText = '';
+    updateParse();
+    $('addDialog').showModal();
+    $('addEmails').focus();
+  };
+  $('addEmails').oninput = updateParse;
+  $('addFile').onchange = async event => {
+    const file = event.target.files[0];
+    fileText = '';
+    if (file) {
+      if (file.size > 262144) toast('Use a file smaller than 256 KB.', 'error');
+      else fileText = await file.text();
+    }
+    updateParse();
+  };
+  $('addConfirm').onclick = async () => {
+    const button = $('addConfirm');
+    button.disabled = true;
+    try {
+      const result = await call('adminImportUsers', pendingEmails);
+      $('addDialog').close();
+      await load();
+      toast(plural(result.added, 'user') + ' added' + (result.unchanged ? '; ' + result.unchanged + ' already listed and unchanged.' : '.'), 'ok');
+    } catch (error) {
+      toast(errorText(error), 'error');
+      button.disabled = false;
+    }
+  };
+
+  // ---------- Administrator transfer ----------
+  function syncTransfer() {
+    const a = $('newAdmin').value.trim().toLowerCase();
+    const b = $('confirmAdmin').value.trim().toLowerCase();
+    $('transferConfirm').disabled = !EMAIL_PATTERN.test(a) || a !== b || a === administrator;
+  }
+  $('hideButton').onclick = () => {
+    if (!confirm('Hide the Control Center tab in this browser?\n\nUseful while you present the app. To bring it back, press Ctrl + Alt + C (Ctrl + Option + C on a Mac), or open the app with ?studio=control-center at the end of the link.')) return;
+    if (window.StudioTabsBridge) window.StudioTabsBridge.setControlCenterHidden(true);
+  };
+  $('transferButton').onclick = () => {
+    $('newAdmin').value = '';
+    $('confirmAdmin').value = '';
+    syncTransfer();
+    $('transferDialog').showModal();
+  };
+  $('newAdmin').oninput = syncTransfer;
+  $('confirmAdmin').oninput = syncTransfer;
+  $('transferConfirm').onclick = async () => {
+    const email = $('newAdmin').value.trim().toLowerCase();
+    if (!confirm('Transfer administrator access to ' + email + '? You will lose the Control Center.')) return;
+    $('transferConfirm').disabled = true;
+    try {
+      await call('adminTransferAccess', email, $('confirmAdmin').value.trim().toLowerCase());
+      $('transferDialog').close();
+      $('content').hidden = true;
+      $('loading').hidden = false;
+      $('loading').textContent = 'Administrator access transferred to ' + email + '. You are now a regular user — use the tabs above to keep working.';
+      if (window.StudioTabsBridge) window.StudioTabsBridge.refreshAccess();
+    } catch (error) {
+      toast(errorText(error), 'error');
+      syncTransfer();
+    }
+  };
+
+  // ---------- Wiring ----------
+  let searchTimer = null;
+  $('search').oninput = event => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { filter.query = event.target.value.trim().toLowerCase(); render(); }, 150);
+  };
+  $('selectAll').onchange = event => {
+    filtered().filter(row => row.access !== 'Administrator').forEach(row => {
+      if (event.target.checked) selected.add(row.email); else selected.delete(row.email);
+    });
+    render();
+  };
+  $('clearSelection').onclick = () => { selected.clear(); render(); };
+  document.querySelectorAll('[data-bulk]').forEach(node => { node.onclick = () => bulkFromSelection(node.dataset.bulk); });
+  document.querySelectorAll('[data-sort]').forEach(node => {
+    node.onclick = () => {
+      if (sort.key === node.dataset.sort) sort.dir *= -1;
+      else { sort.key = node.dataset.sort; sort.dir = node.dataset.sort === 'email' ? 1 : -1; }
+      render();
+    };
+  });
+  $('downloadButton').onclick = downloadCsv;
+  $('refreshButton').onclick = () => load().then(() => toast('Updated.', 'ok')).catch(error => toast(errorText(error), 'error'));
+  $('helpButton').onclick = () => $('helpDialog').showModal();
+  document.querySelectorAll('[data-close]').forEach(node => { node.onclick = () => node.closest('dialog').close(); });
+
+  load().catch(error => {
+    $('loading').textContent = 'Unable to load the Control Center: ' + errorText(error);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script>
+/** The first list's tabs, settings and records arrive with the page. */
+window.CARD_DATA = <?!= jsonForScript_(initialData) ?>;
+window.STUDIO_TYPE = CARD_DATA.list;
+window.STUDIO_SCOPE = CARD_DATA.scope;
+window.STUDIO_PAGE = CARD_DATA.page;
+/** localStorage namespaced to this user, studio, source and column layout. */
+window.STUDIO_STORAGE = {
+  getItem: key => localStorage.getItem(STUDIO_SCOPE + key),
+  setItem: (key, value) => localStorage.setItem(STUDIO_SCOPE + key, value),
+  removeItem: key => localStorage.removeItem(STUDIO_SCOPE + key)
+};
+</script>
+<style>
+:root {--accent:<?= page.accent ?>;--accent-dark:<?= page.accentDark ?>;--tint:<?= page.tint ?>;--ink:#172033;--muted:#667085;--line:#dce3ec}
+* {box-sizing:border-box}
+[hidden] {display:none!important}
+/* The page is exactly one window tall: tabs and header take what they need, the workspace fills the rest. */
+html {height:100%}
+body {display:flex;flex-direction:column;box-sizing:border-box;height:100%;min-height:0;margin:0;padding:18px 22px;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);background:linear-gradient(135deg,#f7f9fc,#edf1f7)}
+input,select,button {font:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+
+/* Header */
+.app-header {display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;margin-bottom:16px}
+.brand {display:flex;align-items:center;gap:12px;margin-right:auto}
+.mark {display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#6f42c1)}
+.mark svg {width:34px;height:34px}
+.brand h1 {margin:0;font-size:21px}
+/* List tabs: one tab per list, plus “New List” */
+/* Tabs wrap onto more rows when there are many lists (no sideways scrolling). */
+.list-tabs {display:flex;flex-wrap:wrap;align-items:flex-end;gap:4px 2px;margin:-4px 0 16px;padding:0 2px 6px;border-bottom:1px solid var(--line)}
+.list-tab {display:inline-flex;flex:0 0 auto;align-items:center;gap:8px;min-height:42px;padding:8px 14px;border:1px solid transparent;border-bottom:3px solid transparent;border-radius:9px 9px 0 0;background:none;color:#475467;font:600 14px 'Segoe UI',Arial,sans-serif;white-space:nowrap;cursor:pointer}
+.list-tab:hover {background:rgba(23,32,51,.04);color:var(--ink)}
+.list-tab[aria-selected=true] {background:#fff;border-color:var(--line);border-bottom:3px solid var(--tab-color);color:var(--ink)}
+.list-tab .dot {flex:0 0 10px;width:10px;height:10px;border-radius:50%;background:var(--tab-color)}
+.list-tab small {color:var(--muted);font-size:11px;font-weight:600}
+.list-tab-edit {flex:0 0 auto;align-self:center;width:30px;height:30px;margin:0 6px 0 -4px;border:0;border-radius:7px;background:none;color:#667085;font-size:14px;cursor:pointer}
+.list-tab-edit:hover {background:rgba(23,32,51,.07);color:var(--ink)}
+.list-tab.new {color:#185adb}
+.list-tab.loading::after {content:'';width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--tab-color);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin {to {transform:rotate(360deg)}}
+body.switching #studioView,body.switching #setupView,body.switching #welcomeView {opacity:.45;pointer-events:none;transition:opacity .15s}
+.list-tab.new:hover {background:#eef4ff}
+.list-tab:focus-visible,.list-tab-edit:focus-visible {outline:2px solid var(--accent);outline-offset:-2px}
+.welcome-card {text-align:center}
+.welcome-card .mark {margin:0 auto 14px;width:56px;height:56px}
+.welcome-card .btn {margin-top:8px;padding:10px 18px;font-size:14px}
+.color-choices {display:flex;flex-wrap:wrap;gap:8px}
+.color-choices label {position:relative;display:block;width:34px;height:34px;cursor:pointer}
+.color-choices input {position:absolute;opacity:0}
+.color-choices span {display:block;width:34px;height:34px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 1px var(--line)}
+.color-choices input:checked + span {box-shadow:0 0 0 3px var(--ink)}
+.color-choices input:focus-visible + span {outline:2px solid var(--accent);outline-offset:3px}
+.match-choices label {display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:13px;cursor:pointer}
+.match-choices small {display:block;color:var(--muted);font-size:12px}
+.form-label {display:block;margin:14px 0 6px;font-size:12px;font-weight:700}
+.danger-zone {margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.btn.danger-ghost {border:1px solid #f1c4bf;background:#fff;color:#b42318}
+.brand p {margin:2px 0 0;color:var(--muted);font-size:12px}
+.summary {display:flex;flex-wrap:wrap;gap:6px}
+.pill {display:inline-flex;align-items:center;gap:5px;max-width:260px;padding:5px 10px;overflow:hidden;border:1px solid var(--line);border-radius:999px;background:#fff;color:#344054;font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+.pill.ok::before {content:'✓';color:#1f883d;font-weight:900}
+.pill.missing {border-color:#f4c7c3;background:#fff7f6;color:#b42318}
+.pill.missing::before {content:'!';font-weight:900}
+
+/* Buttons */
+.btn {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:8px 13px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer}
+.btn:hover:not(:disabled) {filter:brightness(.93)}
+.btn:disabled {opacity:.5;cursor:not-allowed}
+.btn.ghost {border:1px solid var(--line);background:#fff;color:#344054}
+.btn.green {background:#1f883d}.btn.orange {background:#d97706}.btn.blue {background:#185adb}
+.btn.small {min-height:32px;padding:5px 10px;font-size:12px}
+.icon-btn {width:38px;padding:0}
+
+/* Setup checklist */
+.setup {display:grid;place-items:start center;padding-top:4vh}
+.setup-card {width:min(680px,100%);padding:28px;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 50px rgba(33,48,73,.12)}
+.setup-card h2 {margin:0 0 6px;font-size:22px}
+.setup-card > p {margin:0 0 20px;color:var(--muted)}
+.steps {margin:0;padding:0;list-style:none}
+.steps > li {display:grid;grid-template-columns:34px 1fr;gap:12px;padding:16px 0;border-top:1px solid #edf0f4}
+.steps > li:first-child {border-top:0}
+.step-mark {display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#eef2f7;color:#475467;font-weight:800}
+.steps > li.done .step-mark {background:#dcfce7;color:#166534}
+.steps > li.current .step-mark {background:var(--accent);color:#fff}
+.steps strong {display:block;margin-bottom:3px}
+.steps p {margin:0 0 9px;color:var(--muted);font-size:12px;line-height:1.45}
+.row {display:flex;gap:8px}
+.input {width:100%;min-width:0;min-height:38px;padding:8px 11px;border:1px solid #cfd7e2;border-radius:8px;background:#fff;color:var(--ink)}
+.tools {display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;padding-top:16px;border-top:1px solid #edf0f4}
+body > #sourcePanel {display:none}
+
+/* Workspace */
+.workspace {display:grid;flex:1 1 auto;grid-template-columns:minmax(280px,340px) minmax(0,1fr);gap:16px;min-height:360px}
+.list-tabs,.app-header {flex:0 0 auto}
+.panel {display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(33,48,73,.07)}
+
+/* List */
+.list-head {padding:14px 14px 10px;border-bottom:1px solid #edf0f4}
+.chips {display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 8px}
+.chip {padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#f8fafc;color:#344054;font-size:12px;font-weight:600;cursor:pointer}
+.chip[aria-pressed=true] {border-color:var(--accent);background:var(--accent);color:#fff}
+.chip:disabled {opacity:.55;cursor:wait}
+.class-filter {display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:12px;font-weight:700;color:#344054}
+.class-filter select {flex:1;min-width:0;min-height:34px;padding:5px 8px;border:1px solid #cfd7e2;border-radius:8px;background:#fff;font-size:13px}
+.class-filter select.active {border-color:var(--accent);box-shadow:0 0 0 2px var(--tint);font-weight:700}
+.list-tools {display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px}
+.list-tools label {display:flex;align-items:center;gap:6px;cursor:pointer}
+.record-list {flex:1;min-height:0;overflow-y:auto}
+.record-row {display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f4f8}
+.record-row.active {background:var(--tint);box-shadow:inset 3px 0 var(--accent)}
+.record-row input {width:17px;height:17px;cursor:pointer}
+.record-main {min-width:0;padding:2px 0;border:0;background:none;color:inherit;text-align:left;cursor:pointer}
+.record-name {display:block;overflow:hidden;font-size:13px;font-weight:700;white-space:nowrap;text-overflow:ellipsis}
+.record-sub {display:block;overflow:hidden;color:var(--muted);font-size:11px;white-space:nowrap;text-overflow:ellipsis}
+.badge {padding:3px 7px;border-radius:5px;font-size:10px;font-weight:800;white-space:nowrap}
+.badge.ready {background:#dcfce7;color:#166534}
+.badge.missing {background:#fef3c7;color:#92400e}
+.badge.failed {background:#fee4e2;color:#b42318}
+.badge.duplicate {margin-right:4px;background:#b42318;color:#fff}
+.record-badges {display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.list-empty {padding:30px 18px;color:var(--muted);font-size:13px;text-align:center}
+.selection-bar {display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 14px;background:#eef4ff;border-top:1px solid #c7d7f5;font-size:12px;font-weight:700}
+.selection-bar span {margin-right:auto}
+.list-foot {padding:12px 14px;border-top:1px solid #edf0f4}
+.list-foot .btn {width:100%}
+
+/* Preview header (gallery and single-card modes share it) */
+.preview-bar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-height:64px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.preview-heading {margin-right:auto;min-width:0}
+.preview-heading strong {display:block;font-size:16px}
+.preview-heading span {display:block;color:var(--muted);font-size:12px}
+.single-bar {display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-right:auto}
+.single-bar strong {margin:0 8px 0 4px;font-size:16px}
+.nav-count {min-width:56px;color:var(--muted);font-size:12px;text-align:center}
+.bar-actions {display:flex;flex-wrap:wrap;gap:8px}
+.meta {margin:0;padding:8px 16px 0;color:#475467;font-size:12px}
+.meta:empty {display:none}
+
+/* Canvas */
+.canvas {flex:1;min-height:0;overflow:auto;padding:24px;background-color:var(--tint);background-image:radial-gradient(rgba(23,32,51,.10) 1px,transparent 1px);background-size:18px 18px}
+.card-grid {display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:22px}
+.gallery-card {position:relative;border-radius:14px;cursor:pointer;transition:transform .12s}
+.gallery-card:hover {transform:translateY(-3px)}
+.gallery-card.selected {outline:3px solid var(--accent);outline-offset:4px}
+.tile-check {position:absolute;z-index:1000;top:-8px;left:-8px;display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--line);border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(23,32,51,.2);cursor:pointer}
+.tile-check input {width:16px;height:16px;margin:0;cursor:pointer}
+.single-card {display:flex;justify-content:center;padding:10px 0 30px}
+.single-card > div {zoom:1.5}
+.sentinel {height:1px}
+.load-more {margin:18px 0 0;color:#475467;font-size:12px;font-weight:600;text-align:center}
+.empty-gallery {max-width:360px;margin:40px auto;color:#475467;font-size:14px;text-align:center}
+
+/* Dialogs */
+dialog.plain {width:min(620px,calc(100vw - 32px));max-height:88vh;padding:24px;overflow:auto;border:1px solid var(--line);border-radius:14px;color:var(--ink);box-shadow:0 20px 60px rgba(23,32,51,.27)}
+dialog.plain::backdrop {background:rgba(23,32,51,.45)}
+dialog.plain h2 {margin:0 0 6px;font-size:20px}
+dialog.plain > p {margin:0 0 14px;color:var(--muted);font-size:13px}
+dialog.plain footer {display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.help ol {margin:0;padding-left:20px;line-height:1.6}
+.help li {margin-bottom:8px}
+
+@media(max-width:860px) {
+  body {padding:12px}
+  body {height:auto;min-height:100%}
+  .workspace {grid-template-columns:1fr;flex:none}
+  .list-panel {max-height:60vh}
+  .preview {min-height:600px}
+  .brand p {display:none}
+  .single-card > div {zoom:1.2}
+}
+</style>
+</head>
+<body>
+<nav id="listTabs" class="list-tabs" role="tablist" aria-label="Your card lists"></nav>
+<header class="app-header">
+  <div class="brand">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 48 48"><rect x="5" y="9" width="38" height="30" rx="6" fill="#fff"/><circle cx="17" cy="22" r="6" fill="var(--tint)" stroke="var(--accent)" stroke-width="2"/><path d="M9 35c1-5.5 3.8-8 8-8s7 2.5 8 8" fill="var(--accent)"/><rect x="28" y="17" width="10" height="3" rx="1.5" fill="var(--accent)"/><rect x="28" y="24" width="8" height="3" rx="1.5" fill="var(--accent)"/></svg></div>
+    <div><h1 id="listTitle"><?= page.title ?></h1><p id="listSubtitle"><?= page.subtitle ?></p></div>
+  </div>
+  <div id="sourceSummary" class="summary"></div>
+  <button id="helpButton" class="btn ghost icon-btn" type="button" aria-label="Help" title="Help">?</button>
+  <button id="settingsButton" class="btn ghost" type="button">⚙ Settings</button>
+</header>
+
+<!-- No lists yet: every user creates their own. -->
+<section id="welcomeView" class="setup" hidden>
+  <div class="setup-card welcome-card">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 48 48"><rect x="5" y="9" width="38" height="30" rx="6" fill="#fff"/><path d="M24 17v14M17 24h14" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round"/></svg></div>
+    <h2>Create your first list</h2>
+    <p>A list is one group of cards — for example Students, Staff, Substitutes, or Volunteers. Each list has its own spreadsheet, card design, and photo folder. You can create as many as you need.</p>
+    <button id="firstListButton" class="btn" type="button">＋ New list</button>
+  </div>
+</section>
+
+<!-- First-run checklist. The source panel is moved here until setup is complete. -->
+<section id="setupView" class="setup" hidden>
+  <div class="setup-card">
+    <h2>Set up “<span id="setupListName"><?= page.title ?></span>”</h2>
+    <p>Complete these three steps once. Your connections are saved for your Google account. To use a different list, click its tab at the top.</p>
+    <div id="setupSlot"></div>
+  </div>
+</section>
+
+<main id="studioView" class="workspace" hidden>
+  <aside id="listPanel" class="panel list-panel" aria-label="<?= page.plural ?>">
+    <div class="list-head">
+      <input id="searchInput" class="input" type="search" autocomplete="off" placeholder="Search name, ID, grade, or any field…" aria-label="Search records">
+      <div id="chips" class="chips" role="group" aria-label="Filters"></div>
+      <label id="classFilterWrap" class="class-filter" hidden>Class <select id="classFilter" aria-label="Show one class"></select></label>
+      <div class="list-tools">
+        <label><input id="selectAll" type="checkbox"> Select all shown</label>
+        <span id="listCount"></span>
+      </div>
+    </div>
+    <div id="recordList" class="record-list" role="list"></div>
+    <div id="selectionBar" class="selection-bar" hidden>
+      <span id="selectionCount"></span>
+      <button id="showSelectedButton" class="btn ghost small" type="button">Show selected</button>
+      <button id="clearSelectionButton" class="btn ghost small" type="button">Clear</button>
+    </div>
+    <div class="list-foot">
+      <button id="addButton" class="btn green" type="button">＋ Add <?= page.noun ?></button>
+    </div>
+  </aside>
+
+  <section class="panel preview" aria-label="Cards">
+    <div class="preview-bar">
+      <!-- Gallery mode -->
+      <div id="galleryBar" class="preview-heading">
+        <strong id="galleryTitle"></strong>
+        <span id="gallerySub"></span>
+      </div>
+      <!-- Single-card mode -->
+      <div id="singleBar" class="single-bar" hidden>
+        <button id="backButton" class="btn ghost small" type="button"></button>
+        <button id="prevButton" class="btn ghost small icon-btn" type="button" aria-label="Previous" title="Previous (←)">‹</button>
+        <span id="navCount" class="nav-count"></span>
+        <button id="nextButton" class="btn ghost small icon-btn" type="button" aria-label="Next" title="Next (→)">›</button>
+        <strong id="recordName"></strong>
+        <button id="editButton" class="btn ghost small" type="button">✎ Edit</button>
+        <button id="uploadButton" class="btn ghost small" type="button">⇧ Upload Photo</button>
+        <button id="toggleSelectButton" class="btn ghost small" type="button"></button>
+      </div>
+      <div class="bar-actions">
+        <button id="photoButton" class="btn orange" type="button"></button>
+        <button id="printButton" class="btn blue" type="button"></button>
+      </div>
+    </div>
+    <p id="syncStatus" class="meta" role="status"></p>
+    <div id="canvas" class="canvas"><div id="cardMount"></div></div>
+  </section>
+</main>
+
+<!-- Data sources: shown in the setup checklist, later inside Settings. -->
+<div id="sourcePanel">
+  <ol class="steps">
+    <li id="stepSheet"><span class="step-mark">1</span><div>
+      <strong>Connect your spreadsheet</strong>
+      <p id="sheetNote"></p>
+      <div class="row"><input id="sheetUrl" class="input" aria-label="Spreadsheet URL or ID"><button id="connectSheetButton" class="btn blue" type="button">Connect</button></div>
+    </div></li>
+    <li id="stepDesign"><span class="step-mark">2</span><div>
+      <strong>Choose a card design and match its columns</strong>
+      <p id="designNote"></p>
+      <button id="mappingButton" class="btn orange" type="button">⇄ Design Mapping</button>
+    </div></li>
+    <li id="stepFolder"><span class="step-mark">3</span><div>
+      <strong>Connect the photo folder</strong>
+      <p id="folderNote"></p>
+      <div class="row"><input id="folderUrl" class="input" aria-label="Photo folder URL or ID"><button id="connectFolderButton" class="btn blue" type="button">Connect</button></div>
+    </div></li>
+  </ol>
+  <div class="tools">
+    <button id="openSheetButton" class="btn ghost small" type="button">▦ Open Spreadsheet</button>
+    <button id="openFolderButton" class="btn ghost small" type="button">📁 Open Photo Folder</button>
+    <button id="refreshDataButton" class="btn ghost small" type="button">↻ Refresh Data</button>
+    <button id="clearDataButton" class="btn ghost small" type="button" title="Reset saved design, mappings, and cached photos. Spreadsheet records and photo files are kept.">⌫ Clear Data</button>
+  </div>
+</div>
+
+<dialog id="settingsDialog" class="plain" aria-labelledby="settingsTitle">
+  <h2 id="settingsTitle">Settings</h2>
+  <p>Change the spreadsheet, card design, column mapping, or photo folder for this list. <button id="listSettingsLink" class="btn ghost small" type="button">✎ Rename list, color, photo matching</button></p>
+  <div id="settingsSlot"></div>
+  <footer><button class="btn ghost" type="button" data-close>Close</button></footer>
+</dialog>
+
+<dialog id="helpDialog" class="plain help" aria-labelledby="helpTitle">
+  <h2 id="helpTitle">How to use Card Studio</h2>
+  <ol>
+    <li><b>The cards always match the list.</b> Search or pick a filter (All, Missing photo, a grade) and the cards on the right update at once.</li>
+    <li><b>Class:</b> if your design has a <i>Class / Section</i> field (or Homeroom), a Class box lets you show one class, e.g. 12A — handy for calling students in during photo day. Choose a grade first to see only that grade’s classes.</li>
+    <li><b>Click a name or a card</b> to open it large. Use ‹ › (or the arrow keys) to move through the list, and <b>← Back</b> (or Esc) to return.</li>
+    <li><b>Print</b> always prints what you see: the cards shown, or the one open card. If you tick checkboxes, it prints only the ticked cards.</li>
+    <li><b>📷 Photograph these …</b> takes photos of everyone shown, one after another. Pick “Missing photo” first to photograph only people without one. With a card open, the same button says <b>Take Photo</b>. In the camera: Space captures, Enter saves.</li>
+    <li><b>Lists:</b> your lists are the tabs at the top. Click a tab to switch, <b>✎</b> next to the open tab to rename or remove it, and <b>＋ New List</b> to add one. Each list has its own spreadsheet, design, and photo folder.</li>
+    <li><b>Settings</b> changes the spreadsheet, design, columns, or photo folder. Edits made in the spreadsheet load automatically when you come back to this tab.</li>
+  </ol>
+  <footer><button class="btn ghost" type="button" data-close>Close</button></footer>
+</dialog>
+
+<dialog id="listDialog" class="plain" aria-labelledby="listDialogTitle">
+  <h2 id="listDialogTitle">New list</h2>
+  <p id="listDialogNote">A list is one group of cards, such as Students, Staff, or Volunteers, with its own spreadsheet, design, and photo folder.</p>
+  <label class="form-label" for="listName">List name</label>
+  <input id="listName" class="input" maxlength="40" placeholder="e.g. Students">
+  <span class="form-label">Color</span>
+  <div id="listColors" class="color-choices" role="radiogroup" aria-label="List color"></div>
+  <span class="form-label">Match unlinked photo files by</span>
+  <div class="match-choices">
+    <label><input type="radio" name="photoMatch" value="name"><span>Full name<small>For example “Alex Smith.jpg”</small></span></label>
+    <label><input type="radio" name="photoMatch" value="id"><span>ID number<small>For example “102345.jpg”</small></span></label>
+  </div>
+  <div id="listDanger" class="danger-zone">
+    <button id="deleteListButton" class="btn danger-ghost small" type="button">Remove this list</button>
+    <p class="note" style="margin:8px 0 0;color:var(--muted);font-size:12px">Removes the list and its connections from this app. The spreadsheet, photos, and design files are not deleted.</p>
+  </div>
+  <footer><button class="btn ghost" type="button" data-close>Cancel</button><button id="listSaveButton" class="btn" type="button">Create list</button></footer>
+</dialog>
+
+<input id="uploadInput" type="file" accept="image/*" hidden>
+
+<?!= include('DesignRuntime'); ?>
+<?!= include('StudioClient'); ?>
+<script>
+(function () {
+  'use strict';
+  let TYPE = STUDIO_TYPE;   // current list id ('' when the user has no lists)
+  let PAGE = STUDIO_PAGE;   // current list's names and colors
+  const S = StudioReliability;
+  const R = CardDesignRuntime;
+  const designKey = () => 'active_' + TYPE + '_card_design';
+  const CORE_FIELDS = {class: 'grade', transportation: 'transport'};
+  const PAGE_SIZE = 24;
+  const $ = id => document.getElementById(id);
+
+  let configuration = {hasSpreadsheet: false, hasPhotoFolder: false};
+  let records = [];
+  let headers = [];
+  let design = null;
+  let columnMap = {};
+  const photoStatus = new Map();     // recordKey -> ready | missing | failed
+  let photoStatusLoaded = false;
+  const selectedKeys = new Set();
+  const filter = {query: '', chip: 'all', section: ''};
+  let view = 'gallery';              // gallery | single
+  let activeKey = '';
+  let previewRequest = 0;
+  let galleryList = [];
+  let galleryShown = 0;
+  let galleryGrid = null;
+  let galleryObserver = null;
+
+  S.setRecordKeys(() => records.map(record => record.recordKey));
+  const errorText = error => (error && error.message) || String(error);
+  const byKey = key => records.find(record => record.recordKey === key) || null;
+  const isReady = () => configuration.hasSpreadsheet && configuration.hasPhotoFolder && Boolean(design);
+  const plural = (count, word) => count + ' ' + word + (count === 1 ? '' : 's');
+
+  // ---------- Record text ----------
+  function value(record, type) {
+    return (design && R.getLinkedValue(design, record, type)) || String(record[CORE_FIELDS[type] || type] || '').trim();
+  }
+  function fullName(record) {
+    return design ? R.recordLabel(design, record) : [record.firstName, record.lastName].filter(Boolean).join(' ') || record.fullName || 'Record';
+  }
+  function subtitle(record) {
+    const parts = [];
+    const id = value(record, 'idNumber');
+    const grade = value(record, 'class');
+    const role = value(record, 'title') || value(record, 'department');
+    if (role) parts.push(role);
+    if (id) parts.push('ID ' + id);
+    if (grade) parts.push('Grade ' + grade);
+    const section = sectionOf(record);
+    if (section) parts.push(section);
+    return parts.join(' · ');
+  }
+
+  // ---------- Design and setup ----------
+  function loadDesign() {
+    try {
+      const saved = JSON.parse(STUDIO_STORAGE.getItem(designKey()) || 'null');
+      if (!saved || saved.fileType !== 'ID_CARD_DESIGN') return null;
+      saved.frontElements = Array.isArray(saved.frontElements) ? saved.frontElements : Array.isArray(saved.elements) ? saved.elements : [];
+      saved.backElements = Array.isArray(saved.backElements) ? saved.backElements : [];
+      saved.elements = saved.frontElements;
+      columnMap = R.loadColumnMapping(saved, TYPE);
+      R.applyColumnMapping(saved, columnMap);
+      return saved;
+    } catch (error) {
+      return null;
+    }
+  }
+  function updateSetup() {
+    const sheet = configuration.hasSpreadsheet;
+    const folder = configuration.hasPhotoFolder;
+    const designName = design ? design.selectedFileName || design.name || 'ID Card Design' : '';
+    const steps = [['stepSheet', sheet], ['stepDesign', Boolean(design)], ['stepFolder', folder]];
+    const current = steps.find(step => !step[1]);
+    steps.forEach(([id, done], index) => {
+      $(id).classList.toggle('done', done);
+      $(id).classList.toggle('current', Boolean(current) && current[0] === id);
+      $(id).querySelector('.step-mark').textContent = done ? '✓' : String(index + 1);
+    });
+    $('sheetNote').textContent = sheet
+      ? 'Connected. Paste a different spreadsheet to switch; Design Mapping opens to confirm columns.'
+      : 'Paste the URL of the Google Sheet with your ' + PAGE.plural.toLowerCase() + '. Design Mapping opens next.';
+    $('designNote').textContent = design
+      ? 'Using “' + designName + '”. Open Design Mapping to change the design, worksheet, or columns.'
+      : 'Pick a design file saved in Design Studio and match each data field to a spreadsheet column.';
+    $('folderNote').textContent = (folder ? 'Connected. ' : 'Paste the Google Drive folder that holds photos. ') + PAGE.photoHint;
+    $('sheetUrl').placeholder = sheet ? 'Paste a different spreadsheet URL to switch' : 'Paste Google Spreadsheet URL or ID';
+    $('folderUrl').placeholder = folder ? 'Paste a different folder URL to switch' : 'Paste Google Drive folder URL or ID';
+    $('connectSheetButton').textContent = sheet ? 'Switch' : 'Connect';
+    $('connectFolderButton').textContent = folder ? 'Switch' : 'Connect';
+    $('mappingButton').disabled = !sheet;
+    $('mappingButton').title = sheet ? '' : 'Connect a spreadsheet first.';
+    $('openSheetButton').disabled = !sheet;
+    $('openFolderButton').disabled = !folder;
+    $('refreshDataButton').disabled = !isReady();
+
+    const summary = $('sourceSummary');
+    summary.replaceChildren();
+    [[sheet, sheet ? 'Spreadsheet' : 'No spreadsheet'], [Boolean(design), design ? designName : 'No design'], [folder, folder ? 'Photo folder' : 'No photo folder']].forEach(([ok, text]) => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'pill ' + (ok ? 'ok' : 'missing');
+      pill.textContent = text;
+      pill.title = 'Open Settings';
+      pill.onclick = openSettings;
+      summary.appendChild(pill);
+    });
+
+    const ready = isReady();
+    $('setupView').hidden = ready;
+    $('studioView').hidden = !ready;
+    $('settingsButton').hidden = !ready;
+    (ready ? $('settingsSlot') : $('setupSlot')).appendChild($('sourcePanel'));
+  }
+  function openSettings() {
+    if (isReady()) $('settingsDialog').showModal();
+  }
+  function openMapping(spreadsheetUrl) {
+    if ($('settingsDialog').open) $('settingsDialog').close();
+    S.openDesignMapping({spreadsheetUrl: spreadsheetUrl || '', design: design});
+  }
+  async function connectFolder() {
+    const url = $('folderUrl').value.trim();
+    if (!url) return S.toast('Paste the photo folder URL or ID first.', 'error');
+    const button = $('connectFolderButton');
+    button.disabled = true;
+    try {
+      const result = await S.call('setStudioPhotoFolder', TYPE, url);
+      S.carryDesignToScope(result && result.scope);
+      S.reopen();
+    } catch (error) {
+      S.toast('Photo folder not changed: ' + errorText(error), 'error');
+      button.disabled = false;
+    }
+  }
+  function openResource(kind) {
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) return S.toast('Allow pop-ups for this app, then try again.', 'error');
+    S.call('getConfiguredResourceUrl', TYPE, kind)
+      .then(url => { tab.location.href = url; })
+      .catch(error => { tab.close(); S.toast(errorText(error), 'error'); });
+  }
+
+  // ---------- Filters ----------
+  /** The class (e.g. 12A): the Class / Section field, or Homeroom when a list has no section field. */
+  const sectionOf = record => value(record, 'section') || value(record, 'homeroom');
+  const naturalSort = (a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'});
+  /** Records matching the grade/missing/... buttons (before the class and search filters). */
+  function chipFiltered() {
+    let list = records;
+    if (filter.chip === 'missing') list = list.filter(missingPhoto);
+    else if (filter.chip === 'selected') list = list.filter(record => selectedKeys.has(record.recordKey));
+    else if (filter.chip === 'duplicates') list = list.filter(record => record._duplicateId);
+    else if (filter.chip.startsWith('grade:')) {
+      const grade = filter.chip.slice(6);
+      list = list.filter(record => value(record, 'class') === grade);
+    }
+    return list;
+  }
+  /** One dropdown entry per class; after choosing a grade, only that grade's classes. */
+  function renderClassFilter() {
+    const select = $('classFilter');
+    const anyClass = records.some(sectionOf);
+    $('classFilterWrap').hidden = !anyClass;
+    if (!anyClass) { filter.section = ''; return; }
+    const counts = new Map();
+    chipFiltered().forEach(record => {
+      const section = sectionOf(record);
+      if (section) counts.set(section, (counts.get(section) || 0) + 1);
+    });
+    if (filter.section && !counts.has(filter.section)) filter.section = '';
+    select.replaceChildren(new Option('All classes', ''),
+      ...Array.from(counts.keys()).sort(naturalSort).map(section => new Option(section + ' · ' + counts.get(section), section)));
+    select.value = filter.section;
+    select.classList.toggle('active', Boolean(filter.section));
+  }
+  function gradeValues() {
+    const grades = new Set(records.map(record => value(record, 'class')).filter(Boolean));
+    return Array.from(grades).sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+  }
+  const missingPhoto = record => photoStatus.get(record.recordKey) !== 'ready';
+  function filtered() {
+    let list = chipFiltered();
+    if (filter.section) list = list.filter(record => sectionOf(record) === filter.section);
+    if (filter.query && design) list = R.matchingRecords(design, list, filter.query, true);
+    return list;
+  }
+  /** Human description of the current list, e.g. “Grade 9” or “Missing photo · matching “ann””. */
+  function listLabel() {
+    let label = filter.chip === 'all' ? 'All ' + PAGE.plural.toLowerCase()
+      : filter.chip === 'missing' ? 'Missing photo'
+      : filter.chip === 'selected' ? 'Selected'
+      : filter.chip === 'duplicates' ? 'Duplicate IDs'
+      : 'Grade ' + filter.chip.slice(6);
+    if (filter.section) label = filter.chip === 'all' || filter.chip.startsWith('grade:') ? 'Class ' + filter.section : label + ' · Class ' + filter.section;
+    if (filter.query) label += ' matching “' + filter.query + '”';
+    return label;
+  }
+  function setChip(id) {
+    filter.chip = id;
+    listChanged();
+  }
+  function renderChips() {
+    const host = $('chips');
+    host.replaceChildren();
+    const chips = [
+      {id: 'all', label: 'All · ' + records.length},
+      {id: 'missing', label: photoStatusLoaded ? 'Missing photo · ' + records.filter(missingPhoto).length : 'Checking photos…', disabled: !photoStatusLoaded}
+    ];
+    if (selectedKeys.size) chips.push({id: 'selected', label: 'Selected · ' + selectedKeys.size});
+    const duplicates = records.filter(record => record._duplicateId).length;
+    if (duplicates) chips.push({id: 'duplicates', label: '⚠ Duplicate ID · ' + duplicates});
+    gradeValues().forEach(grade => chips.push({id: 'grade:' + grade, label: 'Grade ' + grade}));
+    if (!chips.some(chip => chip.id === filter.chip)) filter.chip = 'all';
+    chips.forEach(chip => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chip';
+      button.textContent = chip.label;
+      button.disabled = Boolean(chip.disabled);
+      button.setAttribute('aria-pressed', String(filter.chip === chip.id));
+      button.onclick = () => setChip(chip.id);
+      host.appendChild(button);
+    });
+    renderClassFilter();
+  }
+  /** Any change to search or filter: refresh the list and show its cards. */
+  function listChanged() {
+    renderChips();
+    renderList();
+    showGallery();
+  }
+
+  // ---------- List ----------
+  function renderList() {
+    const list = filtered();
+    const host = $('recordList');
+    host.replaceChildren();
+    $('listCount').textContent = list.length === records.length ? plural(records.length, 'record') : list.length + ' of ' + records.length;
+    if (!list.length) {
+      const empty = document.createElement('p');
+      empty.className = 'list-empty';
+      empty.textContent = records.length ? 'No records match this search or filter.' : 'No records yet. Use “Add ' + PAGE.noun + '” or add rows to your spreadsheet.';
+      host.appendChild(empty);
+    }
+    const fragment = document.createDocumentFragment();
+    list.forEach(record => {
+      const key = record.recordKey;
+      const row = document.createElement('div');
+      row.className = 'record-row' + (view === 'single' && key === activeKey ? ' active' : '');
+      row.setAttribute('role', 'listitem');
+      row.dataset.key = key;
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.dataset.selectKey = key;
+      check.checked = selectedKeys.has(key);
+      check.setAttribute('aria-label', 'Select ' + fullName(record) + ' for printing');
+      check.onchange = () => toggleSelected(key, check.checked);
+      const main = document.createElement('button');
+      main.type = 'button';
+      main.className = 'record-main';
+      const name = document.createElement('span');
+      name.className = 'record-name';
+      name.textContent = fullName(record);
+      const sub = document.createElement('span');
+      sub.className = 'record-sub';
+      sub.textContent = subtitle(record);
+      main.append(name, sub);
+      main.onclick = () => showRecord(record);
+      const badges = document.createElement('span');
+      badges.className = 'record-badges';
+      if (record._duplicateId) {
+        const duplicate = document.createElement('span');
+        duplicate.className = 'badge duplicate';
+        duplicate.textContent = 'Duplicate ID';
+        duplicate.title = 'Another row in the spreadsheet has the same ID. Open the card and click Edit to fix it.';
+        badges.appendChild(duplicate);
+      }
+      const status = photoStatus.get(key);
+      if (status) {
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + status;
+        badge.textContent = status === 'ready' ? '✓ Photo' : status === 'missing' ? 'No photo' : 'Photo issue';
+        badges.appendChild(badge);
+      }
+      row.append(check, main, badges);
+      fragment.appendChild(row);
+    });
+    host.appendChild(fragment);
+    syncSelectionUi();
+  }
+  function markActiveRow() {
+    document.querySelectorAll('.record-row').forEach(row => {
+      const active = view === 'single' && row.dataset.key === activeKey;
+      row.classList.toggle('active', active);
+      if (active) row.scrollIntoView({block: 'nearest'});
+    });
+  }
+
+  // ---------- Selection (only for printing a subset) ----------
+  function toggleSelected(key, selected) {
+    if (selected) selectedKeys.add(key); else selectedKeys.delete(key);
+    document.querySelectorAll('[data-select-key="' + CSS.escape(key) + '"]').forEach(input => { input.checked = selected; });
+    document.querySelectorAll('.gallery-card[data-key="' + CSS.escape(key) + '"]').forEach(tile => tile.classList.toggle('selected', selected));
+    renderChips();
+    syncSelectionUi();
+  }
+  const selectedRecords = () => records.filter(record => selectedKeys.has(record.recordKey));
+  function syncSelectionUi() {
+    const list = filtered();
+    const chosen = list.filter(record => selectedKeys.has(record.recordKey)).length;
+    $('selectAll').checked = list.length > 0 && chosen === list.length;
+    $('selectAll').indeterminate = chosen > 0 && chosen < list.length;
+    $('selectionBar').hidden = !selectedKeys.size;
+    $('selectionCount').textContent = selectedKeys.size + ' selected for printing';
+    $('showSelectedButton').hidden = filter.chip === 'selected';
+    const isSelected = selectedKeys.has(activeKey);
+    $('toggleSelectButton').textContent = isSelected ? '✓ Selected' : '☐ Select';
+    $('toggleSelectButton').title = isSelected ? 'Remove from the print selection' : 'Add to the print selection';
+    updateActions();
+  }
+
+  // ---------- Action buttons always say what they will do ----------
+  function printTarget() {
+    if (selectedKeys.size) return {list: selectedRecords(), label: '🖨 Print ' + selectedKeys.size + ' selected'};
+    if (view === 'single') {
+      const record = byKey(activeKey);
+      return {list: record ? [record] : [], label: '🖨 Print this card'};
+    }
+    return {list: galleryList, label: '🖨 Print ' + plural(galleryList.length, 'card')};
+  }
+  function photoTarget() {
+    if (view === 'single') {
+      const record = byKey(activeKey);
+      return {list: record ? [record] : [], label: '📷 Take Photo'};
+    }
+    return {list: galleryList, label: galleryList.length === 1 ? '📷 Photograph 1' : '📷 Photograph these ' + galleryList.length};
+  }
+  function updateActions() {
+    const print = printTarget();
+    const photo = photoTarget();
+    $('printButton').textContent = print.label;
+    $('printButton').disabled = !print.list.length;
+    $('photoButton').textContent = photo.label;
+    $('photoButton').disabled = !photo.list.length;
+    $('photoButton').title = view === 'single' ? 'Take a photo for this person' : 'Photograph everyone shown, one after another';
+  }
+
+  // ---------- Gallery: the cards of the current list ----------
+  function showGallery() {
+    const token = ++previewRequest;
+    view = 'gallery';
+    activeKey = '';
+    galleryList = filtered();
+    galleryShown = 0;
+    $('galleryBar').hidden = false;
+    $('singleBar').hidden = true;
+    $('galleryTitle').textContent = listLabel();
+    markActiveRow();
+    const mount = $('cardMount');
+    mount.innerHTML = '';
+    if (galleryObserver) galleryObserver.disconnect();
+    updateGallerySub();
+    updateActions();
+    if (!galleryList.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-gallery';
+      empty.textContent = records.length ? 'No cards match this search or filter.' : 'No records yet. Add a ' + PAGE.noun.toLowerCase() + ' or add rows to your spreadsheet.';
+      mount.appendChild(empty);
+      return;
+    }
+    galleryGrid = document.createElement('div');
+    galleryGrid.className = 'card-grid';
+    const more = document.createElement('p');
+    more.className = 'load-more';
+    more.id = 'loadMore';
+    const sentinel = document.createElement('div');
+    sentinel.className = 'sentinel';
+    mount.append(galleryGrid, more, sentinel);
+    galleryObserver = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) appendPage(token);
+    }, {root: $('canvas'), rootMargin: '500px'});
+    galleryObserver.observe(sentinel);
+    $('canvas').scrollTop = 0;
+    appendPage(token);
+  }
+  /** Adds the next batch of cards; repeats while the end of the gallery is still on screen. */
+  function appendPage(token) {
+    if (token !== previewRequest || galleryShown >= galleryList.length) return;
+    const page = galleryList.slice(galleryShown, galleryShown + PAGE_SIZE);
+    galleryShown += page.length;
+    S.renderCardBatch({
+      type: TYPE, design: design, records: page, host: galleryGrid, wrap: galleryTile,
+      isActive: () => token === previewRequest
+    });
+    updateGallerySub();
+    requestAnimationFrame(() => {
+      const sentinel = document.querySelector('#cardMount .sentinel');
+      if (!sentinel || token !== previewRequest) return;
+      if (sentinel.getBoundingClientRect().top < $('canvas').getBoundingClientRect().bottom + 500) appendPage(token);
+    });
+  }
+  function updateGallerySub() {
+    const total = galleryList.length;
+    $('gallerySub').textContent = !total ? '' : 'Click a card to open it' + (selectedKeys.size ? ' · tick cards to print only those' : '');
+    const more = $('loadMore');
+    if (more) more.textContent = galleryShown < total ? 'Showing ' + galleryShown + ' of ' + total + ' — scroll for more' : '';
+  }
+  function galleryTile(record, cardMount, host) {
+    const key = record.recordKey;
+    const tile = document.createElement('div');
+    tile.className = 'gallery-card' + (selectedKeys.has(key) ? ' selected' : '');
+    tile.dataset.key = key;
+    tile.title = 'Open ' + fullName(record);
+    const label = document.createElement('label');
+    label.className = 'tile-check';
+    label.title = 'Select for printing';
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.dataset.selectKey = key;
+    check.checked = selectedKeys.has(key);
+    check.setAttribute('aria-label', 'Select ' + fullName(record) + ' for printing');
+    check.onchange = () => toggleSelected(key, check.checked);
+    label.appendChild(check);
+    label.onclick = event => event.stopPropagation();
+    tile.onclick = () => showRecord(record);
+    tile.append(label, cardMount);
+    host.appendChild(tile);
+  }
+
+  // ---------- Single card ----------
+  function showRecord(record) {
+    const token = ++previewRequest;
+    if (galleryObserver) galleryObserver.disconnect();
+    view = 'single';
+    activeKey = record.recordKey;
+    $('galleryBar').hidden = true;
+    $('singleBar').hidden = false;
+    $('backButton').textContent = '← ' + listLabel();
+    $('backButton').title = 'Back to the cards (Esc)';
+    $('recordName').textContent = fullName(record);
+    const list = filtered();
+    const index = list.indexOf(record);
+    $('navCount').textContent = index >= 0 ? (index + 1) + ' of ' + list.length : '';
+    $('prevButton').disabled = index <= 0;
+    $('nextButton').disabled = index < 0 || index >= list.length - 1;
+    syncSelectionUi();
+    markActiveRow();
+    const mount = $('cardMount');
+    mount.innerHTML = '';
+    const holder = document.createElement('div');
+    holder.className = 'single-card';
+    mount.appendChild(holder);
+    S.renderCardBatch({type: TYPE, design: design, records: [record], host: holder, fullPhotos: true, isActive: () => token === previewRequest});
+  }
+  function step(offset) {
+    if (view !== 'single') return;
+    const list = filtered();
+    const next = list[list.findIndex(record => record.recordKey === activeKey) + offset];
+    if (next) showRecord(next);
+  }
+  function refreshPreview() {
+    const current = byKey(activeKey);
+    if (view === 'single' && current) showRecord(current); else showGallery();
+  }
+
+  // ---------- Printing ----------
+  async function printBatch(list) {
+    if (!list.length) return;
+    const printWindow = R.createPrintWindow('Loading photos for ' + plural(list.length, 'card') + '…');
+    if (!printWindow) return;
+    const container = document.createElement('div');
+    await S.renderCardBatch({
+      type: TYPE, design: design, records: list, host: container, fullPhotos: true,
+      isActive: () => !printWindow.closed,
+      onProgress: (done, total) => R.setPrintStatus(printWindow, 'Loaded ' + done + ' of ' + total + ' cards…')
+    });
+    if (!printWindow.closed) R.printCards(container, {printWindow: printWindow});
+  }
+
+  // ---------- Photos ----------
+  async function loadPhotoStatus() {
+    try {
+      const entries = await S.manifest(TYPE);
+      photoStatus.clear();
+      entries.forEach(entry => photoStatus.set(entry.key, entry.status));
+      photoStatusLoaded = true;
+    } catch (error) {
+      S.toast('Photo check failed: ' + errorText(error), 'error');
+    }
+    renderChips();
+    renderList();
+    if (filter.chip === 'missing' && view === 'gallery') showGallery();
+  }
+  async function savePhoto(key, dataUrl) {
+    const result = await S.call('saveStudioPhoto', TYPE, dataUrl, key);
+    S.invalidate();
+    photoStatus.set(key, 'ready');
+    const record = byKey(key);
+    document.querySelectorAll('#cardMount .album-design-card').forEach(card => {
+      if (card.dataset.recordId === key && record) R.render(card.parentElement, design, record, {recordId: key, photoData: dataUrl});
+    });
+    renderChips();
+    renderList();
+    S.toast('Photo saved: ' + result.fileName, 'ok');
+  }
+  function startPhotos() {
+    const target = photoTarget();
+    if (!target.list.length) return;
+    if (target.list.length > 1 && !confirm('Photograph the ' + target.list.length + ' people shown, one after another?\n\nTip: choose the “Missing photo” filter first to photograph only people without a photo.')) return;
+    S.openCamera({
+      title: target.list.length > 1 ? 'Take Photos' : 'Take Photo',
+      people: target.list.map(record => ({key: record.recordKey, label: fullName(record)})),
+      onSave: savePhoto
+    });
+  }
+  // ---------- Add / edit / delete ----------
+  function openForm(record) {
+    S.openRecordForm({
+      title: (record ? 'Edit ' : 'Add ') + PAGE.noun,
+      note: 'These fields come from the data elements in your card design. Save writes them to the spreadsheet.',
+      fields: R.linkedFormFields(design, headers, record ? record._row : [], columnMap),
+      onSave: async values => {
+        const result = record
+          ? await S.call('updateStudioRecord', TYPE, {columnValues: values}, record.recordKey)
+          : await S.call('addStudioRecord', TYPE, {columnValues: values});
+        populate(result.records, result.headers);
+        const saved = byKey(result.savedKey);
+        if (saved) showRecord(saved); else showGallery();
+        S.toast(record ? 'Changes saved.' : PAGE.noun + ' added.', 'ok');
+      },
+      onDelete: record ? async () => {
+        const result = await S.call('deleteStudioRecord', TYPE, record.recordKey);
+        selectedKeys.delete(record.recordKey);
+        populate(result.records, result.headers);
+        showGallery();
+        S.toast(fullName(record) + ' deleted.', 'ok');
+      } : null,
+      deleteConfirm: record ? 'Delete ' + fullName(record) + ' from the spreadsheet and move its linked photo to Drive Trash? This cannot be undone.' : ''
+    });
+  }
+
+  // ---------- Data loading ----------
+  /** Replaces the records and refreshes filters and list (the caller refreshes the cards). */
+  /** The studio shows people alphabetically; the spreadsheet keeps its own order. */
+  function sortRecords(list) {
+    return (Array.isArray(list) ? list : []).slice().sort((a, b) =>
+      fullName(a).localeCompare(fullName(b), undefined, {sensitivity: 'base', numeric: true}));
+  }
+  let duplicateWarned = false;
+  /** data: the records; newHeaders: the list's column titles (sent once with the records). */
+  function populate(data, newHeaders) {
+    records = sortRecords(data);
+    const duplicates = records.filter(record => record._duplicateId).length;
+    if (duplicates && !duplicateWarned) {
+      duplicateWarned = true;
+      S.toast(duplicates + ' records share an ID with another row. Use the “Duplicate ID” filter to fix them.', 'error');
+    }
+    if (Array.isArray(newHeaders) && newHeaders.length) headers = newHeaders.slice();
+    else if (!headers.length) S.call('getConfiguredSpreadsheetHeaders', TYPE).then(list => { headers = list || []; }).catch(() => {});
+    const keys = new Set(records.map(record => record.recordKey));
+    selectedKeys.forEach(key => { if (!keys.has(key)) selectedKeys.delete(key); });
+    renderChips();
+    renderList();
+    loadPhotoStatus();
+  }
+  async function refreshData() {
+    const button = $('refreshDataButton');
+    button.disabled = true;
+    try {
+      S.invalidate();
+      const result = await S.call('getStudioRecords', TYPE);
+      populate(result.records, result.headers);
+      refreshPreview();
+      S.toast('Records and photos reloaded.', 'ok');
+    } catch (error) {
+      S.toast('Unable to refresh: ' + errorText(error), 'error');
+    } finally {
+      button.disabled = false;
+    }
+  }
+  async function clearLocalData() {
+    if (!confirm('Clear this list’s saved design, mappings, and cached photos, and regenerate its internal record codes?\n\nSpreadsheet data, photos, and design files on your device are kept.')) return;
+    try {
+      await S.call('resetStudioRecordCodes', TYPE);
+    } catch (error) {
+      alert('The spreadsheet could not be reset: ' + errorText(error) + '\nLocal data will still be cleared.');
+    }
+    Object.keys(localStorage).filter(key => key.startsWith(STUDIO_SCOPE)).forEach(key => localStorage.removeItem(key));
+    await S.closePhotoCache();
+    if (window.indexedDB && indexedDB.databases) {
+      const databases = await indexedDB.databases();
+      await Promise.all(databases.filter(db => db.name && db.name.startsWith(STUDIO_SCOPE)).map(db => new Promise(resolve => {
+        const request = indexedDB.deleteDatabase(db.name);
+        request.onsuccess = request.onerror = request.onblocked = resolve;
+      })));
+    }
+    S.invalidate();
+    S.reopen();
+  }
+
+  /** Reload spreadsheet values when the user returns to this tab (e.g. after editing the sheet). */
+  (function installReturnSync() {
+    let timer = null;
+    let busy = false;
+    let lastStarted = 0;
+    let hasLeft = false;
+    const schedule = () => {
+      if (!hasLeft || document.hidden) return;
+      clearTimeout(timer);
+      timer = setTimeout(check, 900);
+    };
+    async function check() {
+      if (document.hidden || busy || !isReady() || Date.now() - lastStarted < 2000) return;
+      if (document.querySelector('dialog[open]')) { timer = setTimeout(check, 1500); return; }
+      hasLeft = false;
+      busy = true;
+      lastStarted = Date.now();
+      try {
+        const result = await S.call('getStudioRecords', TYPE);
+        const data = sortRecords(result.records);
+        if (JSON.stringify(data) !== JSON.stringify(records)) {
+          const wasSingle = view === 'single';
+          populate(data, result.headers);
+          refreshPreview();
+          $('syncStatus').textContent = wasSingle && view !== 'single' ? 'The card you had open changed or was removed in the spreadsheet.' : '';
+          S.toast('Spreadsheet changes loaded.', 'ok');
+        }
+      } catch (error) {
+        hasLeft = true;
+        $('syncStatus').textContent = 'Could not check for spreadsheet changes: ' + errorText(error);
+      } finally {
+        busy = false;
+      }
+    }
+    window.addEventListener('blur', () => { hasLeft = true; });
+    window.addEventListener('focus', schedule);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) hasLeft = true; else schedule(); });
+    document.addEventListener('pointerdown', schedule);
+  })();
+
+  // ---------- Wiring ----------
+  let searchTimer = null;
+  $('searchInput').addEventListener('input', event => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { filter.query = event.target.value.trim(); listChanged(); }, 250);
+  });
+  $('searchInput').addEventListener('keydown', event => {
+    if (event.key === 'Escape' && event.target.value) {
+      event.target.value = '';
+      filter.query = '';
+      listChanged();
+    }
+    if (event.key === 'Enter') {
+      clearTimeout(searchTimer);
+      filter.query = event.target.value.trim();
+      renderChips();
+      renderList();
+      const list = filtered();
+      if (list.length === 1) showRecord(list[0]); else showGallery();
+    }
+  });
+  $('selectAll').onchange = event => {
+    filtered().forEach(record => { if (event.target.checked) selectedKeys.add(record.recordKey); else selectedKeys.delete(record.recordKey); });
+    renderChips();
+    renderList();
+    document.querySelectorAll('.gallery-card').forEach(tile => {
+      const on = selectedKeys.has(tile.dataset.key);
+      tile.classList.toggle('selected', on);
+      tile.querySelector('input').checked = on;
+    });
+  };
+  $('showSelectedButton').onclick = () => setChip('selected');
+  $('classFilter').onchange = event => { filter.section = event.target.value; listChanged(); };
+  $('clearSelectionButton').onclick = () => {
+    selectedKeys.clear();
+    if (filter.chip === 'selected') filter.chip = 'all';
+    listChanged();
+  };
+  $('addButton').onclick = () => openForm(null);
+  $('backButton').onclick = showGallery;
+  $('prevButton').onclick = () => step(-1);
+  $('nextButton').onclick = () => step(1);
+  $('editButton').onclick = () => { const record = byKey(activeKey); if (record) openForm(record); };
+  $('uploadButton').onclick = () => $('uploadInput').click();
+  $('uploadInput').onchange = async event => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    const key = activeKey;
+    if (!file || !key) return;
+    try {
+      // The person fits the whole head into the frame before anything is saved.
+      const dataUrl = await S.adjustPhoto(file);
+      if (dataUrl) await savePhoto(key, dataUrl);
+    } catch (error) {
+      S.toast('Photo not saved: ' + errorText(error), 'error');
+    }
+  };
+  $('toggleSelectButton').onclick = () => { if (activeKey) toggleSelected(activeKey, !selectedKeys.has(activeKey)); };
+  $('photoButton').onclick = startPhotos;
+  $('printButton').onclick = () => printBatch(printTarget().list);
+  $('settingsButton').onclick = openSettings;
+  $('helpButton').onclick = () => $('helpDialog').showModal();
+  document.querySelectorAll('[data-close]').forEach(button => { button.onclick = () => button.closest('dialog').close(); });
+  $('connectSheetButton').onclick = () => {
+    const url = $('sheetUrl').value.trim();
+    if (!url) return S.toast('Paste a spreadsheet URL or ID first.', 'error');
+    openMapping(url);
+  };
+  $('mappingButton').onclick = () => openMapping('');
+  $('connectFolderButton').onclick = connectFolder;
+  $('openSheetButton').onclick = () => openResource('spreadsheet');
+  $('openFolderButton').onclick = () => openResource('folder');
+  $('refreshDataButton').onclick = refreshData;
+  $('clearDataButton').onclick = clearLocalData;
+  document.addEventListener('keydown', event => {
+    if (view !== 'single' || document.querySelector('dialog[open]')) return;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (event.key === 'ArrowLeft') { event.preventDefault(); step(-1); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); step(1); }
+    else if (event.key === 'Escape') { event.preventDefault(); showGallery(); }
+  });
+
+  // ---------- Card lists ----------
+  const LIST_COLORS = {blue: '#185adb', purple: '#7141c6', teal: '#0f8b8d', orange: '#d97706', green: '#1f883d', red: '#b42318', slate: '#475467'};
+  let LISTS = Array.isArray(CARD_DATA.lists) ? CARD_DATA.lists : [];
+  /** One tab per list (✎ on the open one), then “＋ New List”. Arrow keys move between tabs. */
+  function buildListTabs() {
+    const nav = $('listTabs');
+    nav.replaceChildren();
+    LISTS.forEach(list => {
+      const current = list.id === TYPE;
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'list-tab';
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(current));
+      tab.tabIndex = current ? 0 : -1;
+      tab.style.setProperty('--tab-color', list.accent);
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('span');
+      name.textContent = list.name;
+      tab.append(dot, name);
+      if (!list.configured) {
+        const hint = document.createElement('small');
+        hint.textContent = 'not set up';
+        tab.appendChild(hint);
+      }
+      tab.title = list.name + (list.configured ? '' : ' — not set up yet');
+      if (list.id === loadingList) tab.classList.add('loading');
+      tab.onclick = () => openList(list.id);
+      // Start loading a list as soon as the pointer is on its tab: the click then feels instant.
+      const warm = () => { if (!current && !listCache.has(list.id)) fetchList(list.id).catch(() => {}); };
+      tab.addEventListener('pointerenter', warm);
+      tab.addEventListener('focus', warm);
+      nav.appendChild(tab);
+      if (current) {
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'list-tab-edit';
+        edit.textContent = '✎';
+        edit.title = 'List settings: rename, color, photo matching, remove';
+        edit.setAttribute('aria-label', 'List settings for ' + list.name);
+        edit.onclick = () => openListDialog(list);
+        nav.appendChild(edit);
+      }
+    });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'list-tab new';
+    add.setAttribute('role', 'tab');
+    add.setAttribute('aria-selected', 'false');
+    add.tabIndex = LISTS.some(list => list.id === TYPE) ? -1 : 0;
+    add.textContent = '＋ New List';
+    add.title = 'Create a new list';
+    add.onclick = () => openListDialog(null);
+    nav.appendChild(add);
+  }
+  $('listTabs').addEventListener('keydown', event => {
+    const tabs = Array.from($('listTabs').querySelectorAll('[role=tab]'));
+    let index = tabs.indexOf(document.activeElement);
+    if (index < 0) return;
+    if (event.key === 'ArrowRight') index = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') index = (index + tabs.length - 1) % tabs.length;
+    else if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    tabs[index].focus();
+  });
+
+  // ---------- Switching lists without reloading the page ----------
+  const listCache = new Map();    // list id → data last seen (records included)
+  const pendingLists = new Map(); // list id → request in progress
+  let switchToken = 0;
+  let loadingList = '';
+  /** One request for everything a list needs. Requests for the same list are shared. */
+  function fetchList(id) {
+    if (pendingLists.has(id)) return pendingLists.get(id);
+    const request = S.call('getCardListData', id, false)
+      .then(data => {
+        if (data && data.list === id) listCache.set(id, data);
+        return data;
+      })
+      .finally(() => pendingLists.delete(id));
+    pendingLists.set(id, request);
+    return request;
+  }
+  /** Shows a list's data: colors, texts, tabs, setup state, records, cards. */
+  function applyListData(data, fromCache) {
+    TYPE = data.list || '';
+    PAGE = data.page;
+    window.STUDIO_TYPE = TYPE;
+    window.STUDIO_SCOPE = data.scope;
+    window.STUDIO_PAGE = PAGE;
+    if (!fromCache && Array.isArray(data.lists)) LISTS = data.lists;
+    const root = document.documentElement.style;
+    root.setProperty('--accent', PAGE.accent);
+    root.setProperty('--accent-dark', PAGE.accentDark);
+    root.setProperty('--tint', PAGE.tint);
+    $('listTitle').textContent = PAGE.title;
+    $('listSubtitle').textContent = PAGE.subtitle;
+    $('setupListName').textContent = PAGE.title;
+    $('addButton').textContent = '＋ Add ' + PAGE.noun;
+    $('listPanel').setAttribute('aria-label', PAGE.plural);
+    // Forget everything about the previous list.
+    records = [];
+    headers = [];
+    columnMap = {};
+    photoStatus.clear();
+    photoStatusLoaded = false;
+    selectedKeys.clear();
+    filter.query = '';
+    filter.chip = 'all';
+    filter.section = '';
+    $('searchInput').value = '';
+    view = 'gallery';
+    activeKey = '';
+    previewRequest++;
+    galleryList = [];
+    duplicateWarned = false;
+    $('syncStatus').textContent = '';
+    loadingList = '';
+    document.body.classList.remove('switching');
+    buildListTabs();
+    $('welcomeView').hidden = Boolean(TYPE);
+    if (!TYPE) {
+      $('setupView').hidden = true;
+      $('studioView').hidden = true;
+      $('settingsButton').hidden = true;
+      $('sourceSummary').replaceChildren();
+      return;
+    }
+    design = loadDesign();
+    configuration = data.configuration || {hasSpreadsheet: false, hasPhotoFolder: false};
+    updateSetup();
+    if (data.error) S.toast(data.error, 'error');
+    if (!isReady()) return;
+    populate(data.records || [], data.headers);
+    showGallery();
+  }
+  /** After showing a list from memory, quietly check the spreadsheet for changes. */
+  async function refreshListInBackground(id, token) {
+    try {
+      listCache.delete(id);
+      const fresh = await fetchList(id);
+      if (token !== switchToken || TYPE !== id) return;
+      LISTS = fresh.lists || LISTS;
+      if (fresh.scope !== STUDIO_SCOPE || JSON.stringify(fresh.configuration) !== JSON.stringify(configuration)) {
+        await S.switchList();
+        if (token === switchToken) applyListData(fresh);
+        return;
+      }
+      buildListTabs();
+      if (isReady() && JSON.stringify(sortRecords(fresh.records || [])) !== JSON.stringify(records)) {
+        populate(fresh.records || [], fresh.headers);
+        refreshPreview();
+      }
+    } catch (error) { /* the list on screen stays usable */ }
+  }
+  /** Opens a list. Visited lists appear instantly; new ones need one request. */
+  async function openList(id, options) {
+    options = options || {};
+    if (!options.fresh && (!id || id === TYPE)) return;
+    const token = ++switchToken;
+    // Remember the current list as it is now, so coming back is instant.
+    if (TYPE && listCache.has(TYPE)) listCache.set(TYPE, Object.assign({}, listCache.get(TYPE), {records: records, configuration: configuration}));
+    if (options.fresh) listCache.delete(id);
+    const cached = id ? listCache.get(id) : null;
+    await S.switchList();
+    if (token !== switchToken) return;
+    if (cached) {
+      applyListData(cached, true);
+      S.call('recordListOpen', id).catch(() => {});
+      refreshListInBackground(id, token);
+      return;
+    }
+    loadingList = id;
+    document.body.classList.add('switching');
+    buildListTabs();
+    try {
+      const data = await fetchList(id || '');
+      if (token !== switchToken) return;
+      applyListData(data);
+      if (data.list) S.call('recordListOpen', data.list).catch(() => {});
+    } catch (error) {
+      if (token !== switchToken) return;
+      loadingList = '';
+      document.body.classList.remove('switching');
+      buildListTabs();
+      S.toast('Unable to open the list: ' + errorText(error), 'error');
+    }
+  }
+
+  let editingList = null;
+  function openListDialog(list) {
+    editingList = list || null;
+    $('listDialogTitle').textContent = list ? 'List settings' : 'New list';
+    $('listDialogNote').hidden = Boolean(list);
+    $('listSaveButton').textContent = list ? 'Save' : 'Create list';
+    $('listDanger').hidden = !list;
+    $('listName').value = list ? list.name : '';
+    const host = $('listColors');
+    host.replaceChildren();
+    const chosen = list ? list.color : Object.keys(LIST_COLORS).find(color => !LISTS.some(item => item.color === color)) || 'blue';
+    Object.keys(LIST_COLORS).forEach(color => {
+      const label = document.createElement('label');
+      label.title = color;
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'listColor';
+      input.value = color;
+      input.checked = color === chosen;
+      input.setAttribute('aria-label', color);
+      const swatch = document.createElement('span');
+      swatch.style.background = LIST_COLORS[color];
+      label.append(input, swatch);
+      host.appendChild(label);
+    });
+    const match = list ? list.photoMatch : 'name';
+    document.querySelectorAll('input[name=photoMatch]').forEach(input => { input.checked = input.value === match; });
+    if ($('settingsDialog').open) $('settingsDialog').close();
+    $('listDialog').showModal();
+    $('listName').focus();
+  }
+  $('listSaveButton').onclick = async () => {
+    const settings = {
+      name: $('listName').value.trim(),
+      color: (document.querySelector('input[name=listColor]:checked') || {}).value,
+      photoMatch: (document.querySelector('input[name=photoMatch]:checked') || {}).value
+    };
+    if (!settings.name) return S.toast('Enter a list name.', 'error');
+    const button = $('listSaveButton');
+    button.disabled = true;
+    try {
+      if (editingList) {
+        await S.call('updateCardList', editingList.id, settings);
+        $('listDialog').close();
+        await openList(editingList.id, {fresh: true});
+        S.toast('List saved.', 'ok');
+      } else {
+        const result = await S.call('createCardList', settings);
+        $('listDialog').close();
+        await openList(result.id, {fresh: true});
+      }
+    } catch (error) {
+      S.toast(errorText(error), 'error');
+    } finally {
+      button.disabled = false;
+    }
+  };
+  $('listName').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('listSaveButton').click(); } });
+  $('deleteListButton').onclick = async () => {
+    if (!editingList) return;
+    if (!confirm('Remove the list “' + editingList.name + '”?\n\nIts spreadsheet, photos, and design files are not deleted. You can connect them again in a new list later.')) return;
+    try {
+      const removed = editingList.id;
+      const result = await S.call('deleteCardList', removed);
+      $('listDialog').close();
+      listCache.delete(removed);
+      LISTS = LISTS.filter(list => list.id !== removed);
+      await openList(result.next, {fresh: true});
+      S.toast('List removed.', 'ok');
+    } catch (error) {
+      S.toast(errorText(error), 'error');
+    }
+  };
+  $('listSettingsLink').onclick = () => openListDialog(LISTS.find(list => list.id === TYPE));
+  $('firstListButton').onclick = () => openListDialog(null);
+
+  // ---------- Start ----------
+  // The page arrived with its first list inside: show it at once, no extra requests.
+  if (CARD_DATA.list) listCache.set(CARD_DATA.list, CARD_DATA);
+  applyListData(CARD_DATA);
+})();
+</script>
+</body>
+</html>

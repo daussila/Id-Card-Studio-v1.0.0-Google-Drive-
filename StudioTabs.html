@@ -1,0 +1,276 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <title>ID Card Studio</title>
+  <style>
+    * {box-sizing:border-box}
+    html,body {height:100%;margin:0}
+    body {display:flex;flex-direction:column;font:14px 'Segoe UI',Arial,sans-serif;color:#172033;background:#e9eef5}
+    [hidden] {display:none!important}
+    .app-header {flex:none;padding:14px 22px 0;background:#f7f9fc;border-bottom:1px solid #cbd5e1}
+    .heading {display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .mark {display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#185adb}
+    h1 {margin:0;font-size:22px}
+    .hint {margin:3px 0 0;font-size:12px;color:#667085}
+    .tabs {display:flex;gap:6px;overflow-x:auto}
+    .tabs button {flex:0 0 auto;display:flex;align-items:center;gap:8px;min-height:44px;padding:10px 18px;border:1px solid transparent;border-bottom:3px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:#475467;font:600 14px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+    .tabs button:hover {background:#e8eef7}
+    .tabs button[aria-selected=true] {background:#e7effd;color:#174ea6;border-color:#c6d5ef;border-bottom-color:#185adb}
+    .tabs button:focus-visible {outline:2px solid #185adb;outline-offset:-3px}
+    .tabs svg {width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    #workspaces {position:relative;flex:1;min-height:0}
+    .workspace {position:absolute;inset:0;visibility:hidden;pointer-events:none}
+    .workspace.active {visibility:visible;pointer-events:auto}
+    iframe {display:block;width:100%;height:100%;border:0;background:#eef2f7}
+    .load-state {position:absolute;inset:0;z-index:1;display:grid;place-content:center;gap:12px;padding:30px;text-align:center;background:#eef2f7}
+    .load-state p {max-width:520px;margin:0;line-height:1.5}
+    .load-state button {justify-self:center;padding:9px 16px;border:1px solid #b4c3d8;border-radius:7px;background:#fff;color:#172033;cursor:pointer}
+    #accessMessage {margin:0;padding:10px 22px;background:#fff0dd;font-size:13px}
+    @media(max-width:600px) {.app-header {padding:10px 10px 0}h1 {font-size:20px}.tabs button {padding:10px 12px}}
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="heading">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="30" height="30" focusable="false"><rect x="6" y="3" width="20" height="26" rx="3" fill="white"/><rect x="12" y="5" width="8" height="2.5" rx="1.25" fill="#185adb"/><circle cx="12" cy="13" r="2.5" fill="#185adb"/><path d="M8.5 20v-1a3.5 3.5 0 0 1 7 0v1Z" fill="#185adb"/><path d="M18.5 12.5h4M18.5 16.5h4M9.5 24h13" fill="none" stroke="#185adb" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+      <div><h1>ID Card Studio</h1><p class="hint">Create your own card lists, design cards, take photos, and print — all in one place.</p></div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="ID Card Studio sections" id="studioTabs">
+      <button id="tab-cards" role="tab" type="button" data-studio="cards" aria-controls="panel-cards" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3"/><circle cx="8" cy="10" r="2"/><path d="M4 17q4-6 8 0 M15 9h4 M15 13h4"/></svg>Card Studio</button>
+      <button id="tab-design" role="tab" type="button" data-studio="design" aria-controls="panel-design" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20H4Z M13 7l4 4"/></svg>Design Studio</button>
+      <? if (isAdministrator === true) { ?>
+      <button id="tab-control-center" role="tab" type="button" data-studio="control-center" aria-controls="panel-control-center" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6Z m-4 10 3 3 5-6"/></svg>Control Center</button>
+      <? } ?>
+    </nav>
+  </header>
+  <p id="accessMessage" role="status" hidden></p>
+  <main id="workspaces" aria-label="Studio workspace"></main>
+<script>
+(function () {
+  'use strict';
+  const initialTab = <?!= JSON.stringify(initialTab) ?>;
+  const initialList = <?!= JSON.stringify(initialList) ?>;
+  const panels = new Map();
+  const tabBar = document.getElementById('studioTabs');
+  const workspace = document.getElementById('workspaces');
+  let active = '';
+  let checkingAccess = false;
+
+  const buttonFor = type => document.getElementById('tab-' + type);
+  const call = (name, ...args) => new Promise((resolve, reject) =>
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args));
+
+  function panelFor(type) {
+    if (panels.has(type)) return panels.get(type);
+    const panel = document.createElement('section');
+    panel.id = 'panel-' + type;
+    panel.className = 'workspace';
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', 'tab-' + type);
+    const state = document.createElement('div');
+    state.className = 'load-state';
+    const text = document.createElement('p');
+    text.setAttribute('role', 'status');
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Try Again';
+    retry.hidden = true;
+    state.append(text, retry);
+    panel.appendChild(state);
+    workspace.appendChild(panel);
+    const entry = {type, panel, state, text, retry, frame: null, loading: false, generation: 0, list: type === 'cards' ? initialList : ''};
+    retry.onclick = () => load(entry);
+    panels.set(type, entry);
+    return entry;
+  }
+
+  function fail(entry, message) {
+    entry.loading = false;
+    entry.text.textContent = message;
+    entry.retry.hidden = false;
+    entry.state.hidden = false;
+  }
+
+  async function load(entry) {
+    if (entry.loading) return;
+    entry.loading = true;
+    entry.state.hidden = false;
+    entry.retry.hidden = true;
+    entry.text.textContent = 'Opening ' + buttonFor(entry.type).textContent.trim() + '…';
+    const generation = ++entry.generation;
+    try {
+      const result = await call('getStudioTabHtml', entry.type, entry.list || '');
+      if (entry.generation !== generation || !buttonFor(entry.type)) return;
+      if (!result || result.studio !== entry.type || typeof result.html !== 'string') throw new Error('The studio could not be loaded.');
+      entry.list = result.list || '';
+      if (entry.frame) entry.frame.remove();
+      const frame = document.createElement('iframe');
+      frame.title = buttonFor(entry.type).textContent.trim();
+      frame.allow = 'camera; microphone; clipboard-write';
+      entry.frame = frame;
+      // srcdoc inherits this authenticated page's origin; credentials never appear in the HTML.
+      frame.srcdoc = result.html;
+      entry.panel.appendChild(frame);
+      setTimeout(() => {
+        if (entry.loading && entry.generation === generation) fail(entry, 'This page is taking longer to open. You can try again.');
+      }, 30000);
+    } catch (error) {
+      if (entry.generation === generation) fail(entry, 'Unable to open this page: ' + (error.message || String(error)));
+    }
+  }
+
+  function select(type, focus) {
+    const button = buttonFor(type);
+    if (!button) return;
+    const previous = panels.get(active);
+    if (previous && previous.frame && active !== type) {
+      previous.frame.contentWindow.dispatchEvent(new previous.frame.contentWindow.Event('blur'));
+    }
+    active = type;
+    const entry = panelFor(type);
+    tabBar.querySelectorAll('[role=tab]').forEach(tab => {
+      const current = tab.dataset.studio === type;
+      tab.setAttribute('aria-selected', String(current));
+      tab.tabIndex = current ? 0 : -1;
+    });
+    panels.forEach(item => {
+      const current = item.type === type;
+      item.panel.classList.toggle('active', current);
+      item.panel.setAttribute('aria-hidden', String(!current));
+      item.panel.inert = !current;
+    });
+    if (!entry.frame && !entry.loading) load(entry);
+    else if (entry.frame && !entry.loading) {
+      const child = entry.frame.contentWindow;
+      child.dispatchEvent(new child.Event('resize'));
+      child.dispatchEvent(new child.Event('focus'));
+    }
+    if (focus) button.focus();
+  }
+
+  /** A studio signals unsaved work by cancelling its beforeunload event. */
+  function hasUnsaved(entry) {
+    if (!entry.frame) return false;
+    try {
+      const child = entry.frame.contentWindow;
+      return !child.dispatchEvent(new child.Event('beforeunload', {cancelable: true}));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /** Reloads a tab; for Cards, listId switches to that list. */
+  function reload(entry, listId) {
+    if (hasUnsaved(entry) && !confirm('This page has unsaved changes. Reload it anyway?')) return;
+    if (listId) entry.list = listId;
+    entry.loading = false;
+    load(entry);
+  }
+
+  // ---------- Hide Control Center (administrator, this browser only) ----------
+  const HIDE_KEY = 'idstudio_hide_control_center';
+  const storedHidden = () => { try { return localStorage.getItem(HIDE_KEY) === '1'; } catch (error) { return false; } };
+  /** Hides or shows the Control Center tab, e.g. while presenting the app to users. */
+  function setControlCenterHidden(hidden) {
+    const button = buttonFor('control-center');
+    if (!button) return;
+    try { localStorage.setItem(HIDE_KEY, hidden ? '1' : '0'); } catch (error) { /* this window only */ }
+    button.hidden = hidden;
+    if (hidden && active === 'control-center') select('cards', false);
+    if (!hidden) select('control-center', true);
+  }
+  /** Ctrl + Alt + C (Ctrl + Option + C on a Mac) shows or hides the tab again. */
+  function controlCenterShortcut(event) {
+    if (!(event.ctrlKey && event.altKey && event.code === 'KeyC')) return false;
+    const button = buttonFor('control-center');
+    if (!button) return false;
+    event.preventDefault();
+    setControlCenterHidden(!button.hidden);
+    return true;
+  }
+  document.addEventListener('keydown', controlCenterShortcut);
+
+  async function refreshAccess() {
+    if (checkingAccess) return;
+    checkingAccess = true;
+    try {
+      const access = await call('getStudioTabsAccess');
+      const button = buttonFor('control-center');
+      if (!access.isAdministrator && button) {
+        const entry = panels.get('control-center');
+        if (entry) {
+          entry.generation++;
+          entry.panel.remove();
+          panels.delete('control-center');
+        }
+        button.remove();
+        if (active === 'control-center') select('cards', true);
+      }
+    } catch (error) {
+      const note = document.getElementById('accessMessage');
+      note.textContent = 'Unable to verify access: ' + (error.message || String(error));
+      note.hidden = false;
+    } finally {
+      checkingAccess = false;
+    }
+  }
+
+  window.IDStudioTabs = Object.freeze({
+    connect(child) {
+      const entry = Array.from(panels.values()).find(item => item.frame && item.frame.contentWindow === child);
+      if (!entry) return null;
+      const generation = entry.generation;
+      const isCurrent = () => entry.generation === generation && entry.frame && entry.frame.contentWindow === child;
+      return Object.freeze({
+        reload(listId) { if (isCurrent()) reload(entry, typeof listId === 'string' ? listId : ''); },
+        refreshAccess,
+        setControlCenterHidden(hidden) { if (isCurrent()) setControlCenterHidden(hidden === true); },
+        shortcut(event) { return controlCenterShortcut(event); },
+        ready() {
+          if (!isCurrent()) return;
+          entry.loading = false;
+          entry.state.hidden = true;
+          if (active === entry.type) child.dispatchEvent(new child.Event('resize'));
+        }
+      });
+    }
+  });
+
+  tabBar.addEventListener('click', event => {
+    const button = event.target.closest('[role=tab]');
+    if (!button) return;
+    select(button.dataset.studio, true);
+    refreshAccess();
+  });
+  tabBar.addEventListener('keydown', event => {
+    const tabs = Array.from(tabBar.querySelectorAll('[role=tab]:not([hidden])'));
+    let index = tabs.indexOf(document.activeElement);
+    if (index < 0) return;
+    if (event.key === 'ArrowRight') index = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') index = (index + tabs.length - 1) % tabs.length;
+    else if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    select(tabs[index].dataset.studio, true);
+    refreshAccess();
+  });
+  window.addEventListener('beforeunload', event => {
+    if (Array.from(panels.values()).some(hasUnsaved)) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
+
+  // A link that opens the Control Center (?studio=control-center) always shows it again.
+  if (buttonFor('control-center')) {
+    if (initialTab === 'control-center') { try { localStorage.setItem(HIDE_KEY, '0'); } catch (error) { /* ignore */ } }
+    else if (storedHidden()) buttonFor('control-center').hidden = true;
+  }
+  select(buttonFor(initialTab) && !buttonFor(initialTab).hidden ? initialTab : 'cards', false);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root {--ink:#17233a;--muted:#667085;--line:#d4dce7;--accent:#2563eb;--accent-soft:#e8f0fe;--panel:#fff;--canvas:#dfe6ee}
+* {box-sizing:border-box}
+[hidden] {display:none!important}
+html,body {height:100%}
+body {display:flex;flex-direction:column;margin:0;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--canvas)}
+button,input,select,textarea {font:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- Top toolbar ---------- */
+.divider {width:1px;height:28px;margin:0 4px;background:var(--line)}
+.btn {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 11px;border:1px solid var(--line);border-radius:7px;background:#fff;color:#344054;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+.btn:hover:not(:disabled) {background:#f5f8fc;border-color:#b8c5d6}
+.btn:disabled {opacity:.45;cursor:default}
+.btn.primary {background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover:not(:disabled) {background:#1d4ed8}
+.btn.icon {width:34px;padding:0}
+.btn.small {min-height:28px;padding:3px 8px;font-size:12px}
+.btn[aria-pressed=true] {background:var(--accent-soft);border-color:#8fb1f0;color:#1748b5}
+.btn .key {margin-left:2px;color:var(--muted);font-size:11px;font-weight:600}
+.btn.primary .key {color:#dbe7ff}
+/* “Add to card” rail: a slim column of icons at the left of the card area */
+.rail-anchor {position:sticky;top:12px;z-index:40;align-self:stretch;width:100%;height:0}
+.rail {position:absolute;top:12px;left:12px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 6px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 22px rgba(16,42,86,.12)}
+.rail-title {margin-bottom:2px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.rail-sep {width:26px;height:1px;margin:4px 0;background:var(--line)}
+.rail .menu-wrap {position:static}
+.rail .menu {top:0;left:calc(100% + 10px)}
+.rail-btn {position:relative;display:grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer}
+.rail-btn[data-icon]::before {flex:none;width:22px;height:22px}
+.rail-btn.data[data-icon]::before {background:#2563eb}
+.rail-btn.fixed[data-icon]::before {background:#16a34a}
+.rail-btn.data:hover,.rail-btn.data[aria-expanded=true] {background:#eef4ff;border-color:#c9daf8}
+.rail-btn.fixed:hover,.rail-btn.fixed[aria-expanded=true] {background:#effaf2;border-color:#cfe6d4}
+.rail-btn:focus-visible {outline:2px solid var(--accent);outline-offset:1px}
+.rail-more {position:absolute;right:3px;bottom:3px;width:0;height:0;border-left:5px solid transparent;border-bottom:5px solid #98a2b3}
+/* name and purpose appear next to the icon */
+.rail-btn::after {content:attr(data-tip);position:absolute;top:50%;left:calc(100% + 10px);z-index:60;padding:5px 9px;border-radius:6px;background:#17233a;color:#fff;font-size:12px;font-weight:600;white-space:nowrap;transform:translateY(-50%);opacity:0;pointer-events:none;transition:opacity .12s}
+.rail-btn:hover::after,.rail-btn:focus-visible::after {opacity:1}
+.rail-btn[aria-expanded=true]::after {opacity:0}
+.menu-note {margin:0 0 6px;padding:8px 10px;border-radius:7px;background:#f3f7ff;color:#405572;font-size:11px;line-height:1.45}
+.segmented {display:inline-flex;padding:2px;border:1px solid var(--line);border-radius:8px;background:#f3f6fa}
+.segmented button {min-height:28px;padding:3px 11px;border:0;border-radius:6px;background:none;color:#475467;font-size:12px;font-weight:700;cursor:pointer}
+.segmented button[aria-pressed=true] {background:#fff;color:#1748b5;box-shadow:0 1px 3px rgba(16,42,86,.15)}
+.zoom {display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:#475467}
+.zoom span {min-width:42px;text-align:center}
+.toggle {display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#344054;cursor:pointer}
+
+/* Drop-down menus */
+.menu-wrap {position:relative}
+.menu {position:absolute;top:calc(100% + 4px);left:0;z-index:2000;min-width:220px;max-height:calc(100vh - 150px);overflow:auto;padding:6px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(16,42,86,.18)}
+.menu.right {left:auto;right:0}
+.menu button {display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:0;border-radius:6px;background:none;color:#223b59;font-size:13px;text-align:left;cursor:pointer}
+.menu button:hover,.menu button:focus-visible {background:var(--accent-soft)}
+.menu button {flex-wrap:wrap;row-gap:1px;padding-top:6px;padding-bottom:6px}
+.menu small {display:block;flex-basis:100%;padding-left:24px;color:var(--muted);font-size:11px;line-height:1.35}
+.menu {width:260px}
+.menu input {width:100%;margin-bottom:6px}
+.menu-title {padding:6px 10px 2px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+[data-icon]::before {content:"";display:inline-block;flex:0 0 15px;width:15px;height:15px;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
+
+/* Design bar: tabs on the left, file actions on the right */
+.doc-bar {display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;padding:8px 14px 0;background:var(--panel);border-bottom:1px solid var(--line)}
+.design-tabs {display:flex;flex:1 1 auto;flex-wrap:wrap;align-items:flex-end;gap:4px;min-width:0}
+.doc-actions {display:flex;align-items:center;gap:6px;padding-bottom:8px}
+.doc-bar #saveStatus {align-self:center;max-width:300px;margin:0 0 8px}
+.design-tab.new {justify-content:center;min-width:40px;padding:0 12px;font-size:18px!important;border:1px dashed #b7c9e6;background:#f6f9ff;color:#1748b5;font-size:12px;font-weight:700;cursor:pointer}
+.design-tab.new:hover {background:#e8f0fe}
+/* Card area toolbar */
+.canvas-bar {display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 14px;padding:8px 12px;border-bottom:1px solid #cfd8e3;background:#eef2f7}
+.canvas-bar #sizeLabel {margin:0;padding:0;color:#475467;font-size:12px}
+/* Save window */
+.save-name {display:flex;align-items:center;gap:6px}
+.save-name .input {flex:1}
+.save-name span {color:var(--muted);font-size:13px}
+/* Tabs and status */
+.design-tab {display:flex;flex:0 0 auto;align-items:center;gap:4px;max-width:230px;height:36px;padding:0 4px 0 12px;border:1px solid transparent;border-bottom:3px solid transparent;border-radius:8px 8px 0 0;background:#eef2f7;color:#405572}
+.design-tab.active {border-color:var(--line);border-bottom-color:var(--accent);background:#fff;color:#194f99}
+.design-tab-name {min-width:0;overflow:hidden;border:0;background:none;color:inherit;font-size:12px;font-weight:700;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.design-tab-name.dirty::before {content:'● ';color:#d97706}
+.design-tab-close {width:22px;height:22px;border:0;border-radius:5px;background:none;color:#7b8798;font-size:16px;cursor:pointer}
+.design-tab-close:hover {background:#fff0ee;color:#b42318}
+#saveStatus {min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted);font-size:12px;white-space:nowrap}
+#saveStatus.error {color:#b42318}
+
+/* ---------- Three panels ---------- */
+.app {display:grid;flex:1;grid-template-columns:250px minmax(0,1fr) 320px;min-height:0}
+.panel {min-width:0;overflow:auto;padding:14px;background:var(--panel)}
+.panel.left {border-right:1px solid var(--line)}
+.panel.right {border-left:1px solid var(--line)}
+.panel h2 {display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;font-size:13px}
+.panel h2 small {color:var(--muted);font-weight:600}
+.hint {margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
+
+/* Layers */
+.layer {display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:2px;margin-bottom:4px;padding:2px 2px 2px 10px;border:1px solid transparent;border-radius:7px;background:#f5f7fa}
+.layer.active {border-color:#8fb1f0;background:var(--accent-soft)}
+.layer.is-hidden .layer-name {opacity:.45;text-decoration:line-through}
+.layer-name {min-width:0;padding:7px 0;overflow:hidden;border:0;background:none;color:#344054;font-size:12px;font-weight:600;text-align:left;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.layer-toggle {width:28px;height:28px;border:0;border-radius:6px;background:none;color:#98a2b3;font-size:13px;cursor:pointer}
+.layer-toggle:hover {background:#e4ebf5;color:#344054}
+.layer-toggle[aria-pressed=true] {color:#1748b5}
+.empty-state {padding:18px 12px;border:1px dashed #c6d2e1;border-radius:9px;color:var(--muted);font-size:12px;line-height:1.5;text-align:center}
+
+/* Canvas */
+.workspace {display:flex;flex-direction:column;min-width:0;overflow:auto}
+#sizeLabel {margin:0;padding:8px;color:#475467;font-size:11px;text-align:center}
+.card-shell {display:flex;flex:1;align-items:flex-start;justify-content:center;padding:28px 28px 60px}
+#cardSizer {position:relative;flex:0 0 auto}
+.design-card {position:absolute;top:0;left:0;overflow:hidden;background:#fff;border:1px solid #98a2b3;transform-origin:top left;touch-action:none;box-shadow:0 20px 42px rgba(16,42,86,.22),0 2px 5px rgba(16,42,86,.12)}
+.lanyard {position:absolute;z-index:999;top:7px;left:50%;width:56px;height:12px;transform:translateX(-50%);background:#e4eaf2;border:1px solid #98a2b3;border-radius:8px;pointer-events:none}
+.lanyard.round {top:8px;width:14px;height:14px;border-radius:50%}
+#printerNote {margin:0 0 12px;padding:8px 10px;border-radius:7px;background:#fff7e6;color:#7a4b00}
+.design-element {cursor:move;user-select:none;touch-action:none}
+.design-element.locked {cursor:default}
+.design-element.selected {outline:2px solid var(--accent);outline-offset:1px}
+.design-element.album-photo {overflow:visible}
+.design-element.album-photo > img,.design-element.album-photo > .album-photo-placeholder {overflow:hidden;border-radius:inherit}
+.resize-handle {position:absolute;z-index:20;width:12px;height:12px;background:var(--accent);border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(16,42,86,.35)}
+.resize-handle.nw {left:0;top:0;transform:translate(-50%,-50%);cursor:nwse-resize}
+.resize-handle.n {left:50%;top:0;transform:translate(-50%,-50%);cursor:ns-resize}
+.resize-handle.ne {right:0;top:0;transform:translate(50%,-50%);cursor:nesw-resize}
+.resize-handle.e {right:0;top:50%;transform:translate(50%,-50%);cursor:ew-resize}
+.resize-handle.se {right:0;bottom:0;transform:translate(50%,50%);cursor:nwse-resize}
+.resize-handle.s {left:50%;bottom:0;transform:translate(-50%,50%);cursor:ns-resize}
+.resize-handle.sw {left:0;bottom:0;transform:translate(-50%,50%);cursor:nesw-resize}
+.resize-handle.w {left:0;top:50%;transform:translate(-50%,-50%);cursor:ew-resize}
+.rotate-handle {position:absolute;z-index:30;left:50%;top:-26px;display:grid;place-items:center;width:20px;height:20px;transform:translateX(-50%);border:2px solid #fff;border-radius:50%;background:#6d4aff;color:#fff;font-size:12px;font-weight:900;line-height:1;box-shadow:0 2px 6px rgba(16,42,86,.35);cursor:grab;touch-action:none}
+.rotate-handle::after {content:attr(data-angle);position:absolute;left:24px;top:-1px;padding:2px 5px;border:1px solid #c9b9e8;border-radius:5px;background:#fff;color:#35245f;font-size:9px;font-weight:800;white-space:nowrap}
+.alignment-guide {position:absolute;z-index:9999;display:none;pointer-events:none}
+.alignment-guide.vertical {top:0;bottom:0;width:1px;background:repeating-linear-gradient(to bottom,#ff006e 0 6px,transparent 6px 9px)}
+.alignment-guide.horizontal {left:0;right:0;height:1px;background:repeating-linear-gradient(to right,#ff006e 0 6px,transparent 6px 9px)}
+
+/* Properties */
+.prop-head {display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.prop-head strong {flex:1;min-width:0}
+.prop-head .btn {padding:0 8px;font-size:12px}
+.source-note {margin:0 0 12px;padding:6px 9px;border-radius:7px;font-size:11px;line-height:1.4}
+.source-note.sheet {background:#f3f7ff;color:#1d3f87}
+.source-note.same {background:#f6faf3;color:#2f5223}
+.align-labels {display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;color:var(--muted);font-size:10px;font-weight:700}
+.align-labels + .align-row {margin-top:3px}
+.panel-label {display:block;margin:10px 0 4px;color:var(--muted);font-size:11px;font-weight:700}
+.prop-head strong {margin-right:auto;font-size:14px}
+.group {margin-top:14px;padding-top:12px;border-top:1px solid #e6ebf2}
+.group:first-of-type {margin-top:0;padding-top:0;border-top:0}
+.group h4 {margin:0 0 8px;color:#34465d;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.field {margin-bottom:10px}
+.label {display:flex;justify-content:space-between;margin-bottom:5px;color:#475569;font-size:11px;font-weight:700}
+.input {width:100%;min-width:0;min-height:32px;padding:5px 8px;border:1px solid #c9d4e2;border-radius:6px;background:#fff;color:#243247;font-size:12px}
+input[type=color].input {padding:2px}
+.inline {display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.font-row {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px}
+.font-row label {display:block;margin-bottom:4px;color:#475569;font-size:11px;font-weight:600}
+.size-control {display:grid;grid-template-columns:24px minmax(0,1fr) 24px;gap:2px;align-items:center}
+.size-combo {position:relative}
+.size-combo .input {padding-right:16px;-moz-appearance:textfield}
+.size-combo .input::-webkit-inner-spin-button {appearance:none}
+.size-open {position:absolute;top:1px;right:1px;bottom:1px;width:16px;padding:0;border:0;background:none;color:#34465d;font-size:11px;cursor:pointer}
+.size-menu {position:absolute;top:34px;right:0;z-index:100;width:80px;max-height:220px;overflow:auto;padding:4px;border:1px solid #c9d4e2;border-radius:6px;background:#fff;box-shadow:0 4px 12px #0002}
+.size-menu button {display:block;width:100%;padding:4px 8px;border:0;border-radius:3px;background:#fff;font-size:12px;text-align:left;cursor:pointer}
+.size-menu button:hover {background:var(--accent-soft)}
+.tool {display:inline-flex;align-items:center;justify-content:center;min-width:0;height:30px;padding:3px;border:1px solid #c9d4e2;border-radius:6px;background:#f6f8fb;color:#243247;font-size:13px;cursor:pointer}
+.tool:hover {background:#edf2f8}
+.tool[aria-pressed=true] {background:var(--accent-soft);border-color:#7fa4ea;color:#16447e}
+.tool svg {width:17px;height:17px}
+.style-row {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin-top:8px}
+.style-row.grade {grid-template-columns:repeat(3,minmax(0,1fr))}
+.align-row {display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+.align-row > div {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+.arrange {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.arrange .tool {font-size:11px}
+details.grade-part {margin-bottom:8px;padding:8px;border:1px solid #d6dfea;border-radius:7px}
+details.grade-part > summary {font-size:12px;font-weight:700;cursor:pointer}
+details.grade-part[open] > summary {margin-bottom:8px}
+.setting-row {display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;margin-bottom:6px}
+.setting-row > label {font-size:12px;color:#34465d}
+.setting-row input[type=color] {width:54px;height:28px;padding:2px;border:1px solid #c9d4e2;border-radius:6px;background:#fff;cursor:pointer}
+.setting-row select {width:130px}
+.opacity-row {display:grid;grid-template-columns:28px minmax(0,1fr) 28px 40px;gap:5px;align-items:center;font-size:11px}
+.rotation-row {display:flex;align-items:center;gap:6px}
+.rotation-row .presets {display:grid;flex:1;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.rotation-row .input {flex:0 0 60px}
+.rotation-letter {display:inline-block;font:700 14px Arial,sans-serif}
+.transport-rule {display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;padding:6px 0}
+.transport-rule strong {display:block;margin-bottom:3px;font-size:11px}
+.transport-icon {display:grid;place-items:center;width:26px;height:26px;border:1px solid #d4dfec;border-radius:6px;background:#fff;font-size:16px}
+.danger {color:#b42318}
+
+/* Dialogs */
+.studio-dialog {width:min(640px,calc(100vw - 32px));padding:22px;border:1px solid var(--line);border-radius:14px;color:var(--ink);font:14px/1.5 'Segoe UI',sans-serif;box-shadow:0 20px 60px rgba(23,32,51,.27)}
+.studio-dialog::backdrop {background:#17233a88}
+.studio-dialog h2 {margin:0 0 6px;font-size:19px}
+.studio-dialog > p {margin:0 0 14px;color:var(--muted);font-size:13px}
+.studio-dialog footer {display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.template-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+.template-group {grid-column:1 / -1;margin:8px 0 -2px;color:#475467;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.template-group:first-child {margin-top:0}
+#templateDialog {width:min(780px,calc(100vw - 32px))}
+#templateGrid {max-height:min(64vh,620px);overflow-y:auto;padding:2px}
+#templateGrid:focus {outline:none}
+.template {display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 8px;border:1px solid var(--line);border-radius:10px;background:#f8fafc;cursor:pointer}
+.template:hover,.template:focus-visible {border-color:var(--accent);background:var(--accent-soft)}
+.template .thumb {position:relative;width:110px;height:110px;overflow:hidden;pointer-events:none}
+.template .thumb > div {position:absolute;left:50%;top:50%}
+.template .album-design-card {box-shadow:0 4px 10px rgba(16,42,86,.18)}
+.template strong {font-size:13px}
+.template small {color:var(--muted);font-size:11px;text-align:center}
+.shortcuts {display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.shortcuts kbd {padding:1px 6px;border:1px solid #c9d4e2;border-radius:4px;background:#f6f8fb;font:12px Consolas,monospace}
+
+@media(max-width:1100px) {.app {grid-template-columns:210px minmax(0,1fr) 290px}}
+@media(max-width:900px) {
+  body {display:block}
+  .app {display:flex;flex-direction:column}
+  .workspace {order:0;min-height:520px}
+  .panel.left {order:1}
+  .panel.right {order:2}
+}
+</style>
+</head>
+<body>
+<!-- Open designs as tabs (＋ at the end), file and history actions on the right -->
+<header class="doc-bar">
+  <div id="designTabs" class="design-tabs" role="tablist" aria-label="Open card designs"></div>
+  <p id="saveStatus" role="status"></p>
+  <div class="doc-actions">
+    <button id="saveButton" class="btn primary" type="button" data-icon="save" title="Save this design (Ctrl+S)">Save</button>
+    <span class="divider" aria-hidden="true"></span>
+    <button id="undoButton" class="btn" type="button" data-icon="undo" title="Undo the last change (Ctrl+Z)">Undo</button>
+    <button id="redoButton" class="btn" type="button" data-icon="redo" title="Redo (Ctrl+Y)">Redo</button>
+  </div>
+</header>
+
+<!-- Add to card: what changes per person vs. what is the same on every card -->
+
+<input id="openDesignFile" type="file" accept=".json,application/json" hidden>
+<input id="imageFileInput" type="file" accept="image/*" hidden>
+
+<main class="app">
+  <aside class="panel left" aria-label="Layers">
+    <h2>Layers <small id="layerCount"></small></h2>
+    <div id="layers"></div>
+    <p class="hint">Top of the list is in front. 👁 shows or hides an element (hidden elements are not printed). 🔒 locks it in place.</p>
+  </aside>
+
+  <section class="workspace">
+    <!-- Controls for the card being designed -->
+    <div class="canvas-bar">
+      <div class="segmented" role="group" aria-label="Card side">
+        <button id="frontSideTab" type="button" data-side="front" aria-pressed="true">Front</button>
+        <button id="backSideTab" type="button" data-side="back" aria-pressed="false">Back</button>
+      </div>
+      <p id="sizeLabel"></p>
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button id="zoomOut" class="btn icon" type="button" aria-label="Zoom out">−</button>
+        <span id="zoomValue">150%</span>
+        <button id="zoomIn" class="btn icon" type="button" aria-label="Zoom in">+</button>
+      </div>
+      <label class="toggle" title="Fill data fields with example values and a photo silhouette"><input id="sampleToggle" type="checkbox"> Sample data</label>
+      <button id="helpButton" class="btn icon" type="button" aria-label="Help and shortcuts">?</button>
+    </div>
+      <!-- Add to card: a slim rail of icons; blue = from the data source, green = same on every card -->
+      <div class="rail-anchor">
+        <div class="rail" role="toolbar" aria-label="Add to card" aria-orientation="vertical">
+          <span class="rail-title">Add</span>
+    <button class="rail-btn data" type="button" data-add="photo" data-icon="camera" data-tip="Photo · each person’s photo" aria-label="Photo"></button>
+    <div class="menu-wrap"><button class="rail-btn data has-menu" type="button" data-menu="nameMenu" aria-expanded="false" data-icon="person" data-tip="Name ▸ Full, First, Middle, Last" aria-label="Name"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="nameMenu" class="menu" hidden></div>
+    </div>
+    <div class="menu-wrap"><button class="rail-btn data has-menu" type="button" data-menu="codeMenu" aria-expanded="false" data-icon="barcode" data-tip="ID & codes ▸ ID number, Barcode, QR code" aria-label="ID and codes"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="codeMenu" class="menu" hidden></div>
+    </div>
+    <div class="menu-wrap"><button class="rail-btn data has-menu" type="button" data-menu="schoolMenu" aria-expanded="false" data-icon="home" data-tip="School ▸ Grade, Class, Homeroom, Job title…" aria-label="School"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="schoolMenu" class="menu" hidden></div>
+    </div>
+    <div class="menu-wrap"><button class="rail-btn data has-menu" type="button" data-menu="moreMenu" aria-expanded="false" data-icon="card" data-tip="More fields ▸ Contact, Dates, Other" aria-label="More fields"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="moreMenu" class="menu" hidden>
+          <input id="dataSearch" class="input" type="search" placeholder="Find any field… (e.g. email)" aria-label="Find a data field">
+          <div id="moreOptions"></div>
+        </div>
+    </div>
+    <span class="rail-sep" aria-hidden="true"></span>
+    <button class="rail-btn fixed" type="button" data-add="logo" data-icon="badge" data-tip="Logo · same on every card" aria-label="Logo"></button>
+    <div class="menu-wrap"><button class="rail-btn fixed has-menu" type="button" data-menu="textMenu" aria-expanded="false" data-icon="text" data-tip="Text ▸ Text, School year" aria-label="Text"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="textMenu" class="menu" hidden>
+        <button type="button" data-add="instructions" data-icon="text">Text<small>Words that are the same on every card, e.g. a heading or rules</small></button>
+        <button type="button" data-add="schoolYear" data-icon="calendar">School Year<small>e.g. 2026–2027</small></button>
+      </div>
+    </div>
+    <div class="menu-wrap"><button class="rail-btn fixed has-menu" type="button" data-menu="imageMenu" aria-expanded="false" data-icon="image" data-tip="Image ▸ Picture, Signature" aria-label="Image"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="imageMenu" class="menu" hidden>
+        <button type="button" data-add="image" data-icon="image">Picture<small>Any image from your computer</small></button>
+        <button type="button" data-add="signature" data-icon="signature">Signature<small>e.g. the principal’s; a transparent PNG works best</small></button>
+      </div>
+    </div>
+    <div class="menu-wrap"><button class="rail-btn fixed has-menu" type="button" data-menu="shapeMenu" aria-expanded="false" data-icon="rectangle" data-tip="Shape ▸ Rectangle, Circle, Line, Symbol" aria-label="Shape"><span class="rail-more" aria-hidden="true"></span></button>
+      <div id="shapeMenu" class="menu" hidden>
+        <button type="button" data-add="rectangle" data-icon="rectangle">Rectangle<small>A colored band or box, e.g. behind a heading</small></button>
+        <button type="button" data-add="circle" data-icon="circle">Circle<small>A colored circle or ring</small></button>
+        <button type="button" data-add="divider" data-icon="line">Line<small>A straight divider line</small></button>
+        <button type="button" data-add="icon" data-icon="star">Symbol<small>A small sign: ★ ☎ ✉ ✓ and more</small></button>
+      </div>
+    </div>
+        </div>
+      </div>
+    <div class="card-shell">
+      <div id="cardSizer">
+        <div id="designCard" class="design-card">
+          <div id="verticalGuide" class="alignment-guide vertical"></div>
+          <div id="horizontalGuide" class="alignment-guide horizontal"></div>
+          <div id="lanyard" class="lanyard"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel right" aria-label="Properties">
+    <!-- Card settings: shown when nothing is selected -->
+    <div id="cardSettings">
+      <div class="prop-head"><strong>Card</strong></div>
+      <div class="group">
+        <div class="field"><label class="label" for="designName">Design name</label><input id="designName" class="input"></div>
+        <div class="field">
+          <label class="label" for="cardSize">Card size</label>
+          <select id="cardSize" class="input"></select>
+          <p id="cardSizeNote" class="hint"></p>
+        </div>
+        <div id="customSizeFields" class="inline">
+          <div class="field"><label class="label" for="customWidth">Width (in)</label><input id="customWidth" class="input" type="number" min="1" max="8.5" step="0.01"></div>
+          <div class="field"><label class="label" for="customHeight">Height (in)</label><input id="customHeight" class="input" type="number" min="1" max="8.5" step="0.01"></div>
+        </div>
+        <div id="orientationField" class="field">
+          <span class="label">Direction</span>
+          <div class="segmented" role="group" aria-label="Card direction">
+            <button type="button" data-orientation="portrait" aria-pressed="true">▯ Portrait</button>
+            <button type="button" data-orientation="landscape" aria-pressed="false">▭ Landscape</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="cardPunch">Hole for clip or lanyard</label>
+          <select id="cardPunch" class="input">
+            <option value="slot">Slot (badge clip or lanyard)</option>
+            <option value="round">Round hole</option>
+            <option value="none">No hole</option>
+          </select>
+        </div>
+        <p id="printerNote" class="hint" hidden>Most plastic ID card printers only take CR80 (some also CR79). Print this size on paper or card stock with an office printer, then use a badge holder.</p>
+        <div class="inline">
+          <div class="field"><label class="label" for="cardColor">Background</label><input id="cardColor" class="input" type="color"></div>
+          <div class="field"><label class="label" for="borderColor">Border</label><input id="borderColor" class="input" type="color"></div>
+        </div>
+        <div class="field"><label class="label" for="cornerRadius">Corner radius <span id="cornerValue"></span></label><input id="cornerRadius" type="range" min="0" max="24" style="width:100%"></div>
+      </div>
+      <p class="hint">Select an element on the card or in Layers to edit it. Use the <b>Add</b> icons at the left of the card to place new elements. When the design is ready, save it and choose it in Card Studio under ⚙ Settings → Design Mapping.</p>
+    </div>
+
+    <!-- Element properties -->
+    <div id="inspector" hidden>
+      <div class="prop-head">
+        <strong id="selectedName"></strong>
+        <button id="duplicateButton" class="btn small" type="button" title="Make a copy (Ctrl+D)">⧉ Duplicate</button>
+        <button id="deleteElementButton" class="btn small danger" type="button" title="Delete (Del)">🗑 Delete</button>
+      </div>
+      <p id="sourceNote" class="source-note"></p>
+
+      <div id="contentGroup" class="group">
+        <h4>Content</h4>
+        <div id="textContentField" class="field">
+          <label id="textContentLabel" class="label" for="textContent">Text</label>
+          <textarea id="textContent" class="input" rows="1" style="resize:vertical" data-prop="text"></textarea>
+        </div>
+        <div id="symbolTools" class="field">
+          <label class="label" for="symbolChoice">Symbol</label>
+          <select id="symbolChoice" class="input">
+            <option value="★">★ Star</option><option value="☎">☎ Telephone</option><option value="✉">✉ Envelope</option><option value="⌂">⌂ Building</option>
+            <option value="●">● Dot</option><option value="✓">✓ Check</option><option value="→">→ Arrow</option><option value="ℹ">ℹ Information</option>
+            <option value="custom">Other… (type your own)</option>
+          </select>
+        </div>
+        <button id="replaceImageButton" class="btn" type="button" data-icon="image">Replace image</button>
+      </div>
+
+      <div id="photoGroup" class="group">
+        <h4>Photo</h4>
+        <span class="label">Fit</span>
+        <div class="segmented" role="group" aria-label="Photo fit" style="margin-bottom:8px">
+          <button type="button" data-prop="photoFit" data-value="cover" title="Fills the frame; edges that don’t fit are cropped">Fill frame</button>
+          <button type="button" data-prop="photoFit" data-value="contain" title="Shows the whole photo; empty space may appear at the sides">Whole photo</button>
+        </div>
+        <span class="label">Keep in view when cropping</span>
+        <div class="segmented" role="group" aria-label="Photo focus" style="margin-bottom:8px">
+          <button type="button" data-prop="photoFocus" data-value="top" title="Keeps the top of the photo (faces)">Top</button>
+          <button type="button" data-prop="photoFocus" data-value="center">Center</button>
+          <button type="button" data-prop="photoFocus" data-value="bottom">Bottom</button>
+        </div>
+        <button id="photoShapeButton" class="btn small" type="button" title="Camera and uploaded photos are 3 : 4. A frame with the same shape shows the whole photo without cropping.">▯ Make frame photo-shaped (3 : 4)</button>
+        <p id="photoShapeNote" class="hint"></p>
+      </div>
+
+      <div id="transportGroup" class="group">
+        <h4>Which values show each icon</h4>
+        <div class="transport-rule"><span class="transport-icon">🚌</span><div><strong>Bus</strong><input class="input" data-prop="transportBusValues" aria-label="Bus values"></div></div>
+        <div class="transport-rule"><span class="transport-icon">🚶</span><div><strong>Walking</strong><input class="input" data-prop="transportWalkValues" aria-label="Walking values"></div></div>
+        <div class="transport-rule"><span class="transport-icon">🚗</span><div><strong>Pick Up</strong><input class="input" data-prop="transportPickupValues" aria-label="Pick Up values"></div></div>
+        <div class="transport-rule"><span class="transport-icon">—</span><div><strong>No icon</strong><input class="input" data-prop="transportNoneValues" aria-label="No icon values"></div></div>
+        <p class="hint">Separate values with commas. Letter case is ignored.</p>
+      </div>
+
+      <div id="textGroup" class="group"></div>
+      <div id="gradeGroup" class="group"></div>
+
+      <div class="group">
+        <h4>Arrange</h4>
+        <div class="arrange">
+          <button class="tool" type="button" data-arrange="front" title="In front of everything else">⤒ To front</button>
+          <button class="tool" type="button" data-arrange="forward" title="One step closer to the front">↑ Forward</button>
+          <button class="tool" type="button" data-arrange="backward" title="One step further back">↓ Backward</button>
+          <button class="tool" type="button" data-arrange="back" title="Behind everything else">⤓ To back</button>
+          <button class="tool" type="button" data-arrange="center-x" title="Center between the left and right edges">↔ Center across</button>
+          <button class="tool" type="button" data-arrange="center-y" title="Center between the top and bottom edges">↕ Center up/down</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h4>Colors &amp; border</h4>
+        <div class="setting-row" data-show="text"><label for="textColor">Text color</label><input id="textColor" type="color" data-prop="color"></div>
+        <div class="setting-row" data-show="grade"><label for="gradeLabelColor">“Grade” label</label><input id="gradeLabelColor" type="color" data-prop="classLabelColor"></div>
+        <div class="setting-row" data-show="grade"><label for="gradeValueColor">Grade number</label><input id="gradeValueColor" type="color" data-prop="classValueColor"></div>
+        <div class="setting-row"><label for="boxColor">Background</label><input id="boxColor" type="color" data-prop="backgroundColor"></div>
+        <div class="setting-row"><label for="borderToggle">Border</label><button id="borderToggle" class="tool" type="button" style="width:54px" aria-pressed="false">Off</button></div>
+        <div class="setting-row" id="borderDetails"><label for="borderWidth">Border line</label>
+          <select id="borderWidth" class="input" data-prop="borderWidth" data-kind="number">
+            <option value="0.5">0.5 px</option><option value="1">1 px</option><option value="2">2 px</option><option value="3">3 px</option><option value="4">4 px</option>
+            <option value="5">5 px</option><option value="6">6 px</option><option value="8">8 px</option><option value="10">10 px</option><option value="12">12 px</option>
+          </select>
+        </div>
+        <div class="setting-row" id="borderColorRow"><label for="borderColorInput">Border color</label><input id="borderColorInput" type="color" data-prop="borderColor"></div>
+        <span class="panel-label">Opacity (see-through)</span>
+        <div class="opacity-row">
+          <button class="tool" type="button" data-opacity-step="-5" aria-label="Decrease opacity">−</button>
+          <input id="opacity" type="range" min="10" max="100" aria-label="Opacity">
+          <button class="tool" type="button" data-opacity-step="5" aria-label="Increase opacity">+</button>
+          <span id="opacityValue"></span>
+        </div>
+      </div>
+
+      <div class="group">
+        <h4>Rotation</h4>
+        <div class="rotation-row">
+          <div class="presets">
+            <button class="tool" type="button" data-prop="rotation" data-value="-90" data-kind="angle" title="Turn left (−90°)">⟲ 90°</button>
+            <button class="tool" type="button" data-prop="rotation" data-value="0" data-kind="angle" title="Straight (0°)">0°</button>
+            <button class="tool" type="button" data-prop="rotation" data-value="90" data-kind="angle" title="Turn right (+90°)">⟳ 90°</button>
+            <button class="tool" type="button" data-prop="rotation" data-value="180" data-kind="angle" title="Upside down (180°)">180°</button>
+          </div>
+          <input id="rotationInput" class="input" type="number" min="-180" max="180" step="1" data-prop="rotation" data-kind="angle" data-commit aria-label="Rotation angle in degrees" title="Any angle, in degrees"><span style="color:var(--muted);font-size:12px">°</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="templateDialog" class="studio-dialog" aria-labelledby="templateTitle">
+  <h2 id="templateTitle">New card</h2>
+  <p id="templateIntro">Start from a template or a blank card. Every element can be changed afterwards.</p>
+  <div id="templateGrid" class="template-grid"></div>
+  <footer><button id="templateOpenButton" class="btn" type="button" data-icon="open" style="margin-right:auto">Open a saved design…</button><button id="templateCloseButton" class="btn" type="button" data-close>Cancel</button></footer>
+</dialog>
+
+<dialog id="helpDialog" class="studio-dialog" aria-labelledby="helpTitle">
+  <h2 id="helpTitle">Design Studio help</h2>
+  <p>Add elements from the toolbar, drag them on the card, and edit them in the right panel. Data fields show placeholder labels; turn on <b>Sample data</b> to see realistic values.</p>
+  <div class="shortcuts">
+    <kbd>Drag</kbd><span>Move · edges resize · purple handle rotates (snaps to 45°)</span>
+    <kbd>Arrows</kbd><span>Nudge 1 px (Shift = 5 px)</span>
+    <kbd>Ctrl+D</kbd><span>Duplicate</span>
+    <kbd>Del</kbd><span>Delete the selected element</span>
+    <kbd>Ctrl+Z / Ctrl+Y</kbd><span>Undo / Redo</span>
+    <kbd>Ctrl+S</kbd><span>Save (download)</span>
+    <kbd>Esc</kbd><span>Deselect</span>
+  </div>
+  <footer><button class="btn" type="button" data-close>Close</button></footer>
+</dialog>
+
+<?!= include('DesignRuntime'); ?>
+<script>
+(function () {
+  'use strict';
+  const R = CardDesignRuntime;
+  const $ = id => document.getElementById(id);
+  const card = $('designCard');
+
+  // ---------- Definitions ----------
+  const FONT_SIZE_MIN = 1;
+  const FONT_SIZE_MAX = 72;
+  const ZOOMS = [1, 1.25, 1.5, 1.75, 2, 2.5];
+  const FONTS = [['Segoe UI, Arial, sans-serif', 'Segoe UI'], ['Arial, sans-serif', 'Arial'], ['Georgia, serif', 'Georgia'], ["'Times New Roman', serif", 'Times New Roman'], ['Impact, sans-serif', 'Impact'], ["'Courier New', monospace", 'Courier New']];
+  // Card sizes come from DesignRuntime (R.CARD_SIZES / R.cardSpec), shared with Card Studio and printing.
+  const PORTRAIT_SLOT = {size: 'cr80', orientation: 'portrait', punch: 'slot'};
+  const LANDSCAPE_PLAIN = {size: 'cr80', orientation: 'landscape', punch: 'none'};
+  const DEFAULTS = {
+    text: {w: 150, h: 28}, image: {w: 140, h: 100}, logo: {w: 170, h: 62}, photo: {w: 108, h: 144},
+    firstName: {w: 170, h: 28, fontWeight: '900'}, lastName: {w: 170, h: 28, fontWeight: '900'}, fullName: {w: 180, h: 30, fontWeight: '900'},
+    schoolYear: {w: 125, h: 25, fontWeight: '700', color: '#185adb'}, idNumber: {w: 145, h: 25, fontWeight: '700'},
+    barcodeNumber: {w: 170, h: 50}, qrCode: {w: 82, h: 82}, title: {w: 160, h: 25, fontWeight: '700', color: '#d92d20'},
+    class: {w: 120, h: 28}, transportation: {w: 38, h: 38}, middleName: {w: 160, h: 25}, department: {w: 170, h: 25},
+    email: {w: 185, h: 24}, phone: {w: 160, h: 24}, address: {w: 185, h: 34}, dateOfBirth: {w: 150, h: 24},
+    issueDate: {w: 150, h: 24}, expirationDate: {w: 160, h: 24}, emergencyContact: {w: 185, h: 28},
+    bloodType: {w: 120, h: 24, fontWeight: '700'}, campus: {w: 160, h: 25, fontWeight: '700'},
+    emergencyPhone: {w: 160, h: 24}, homeroom: {w: 150, h: 24}, section: {w: 110, h: 24, fontWeight: '700'}, teacherName: {w: 170, h: 24}, buildingRoom: {w: 160, h: 24},
+    signature: {w: 130, h: 45}, instructions: {w: 180, h: 70, text: 'If found, please return this card to the school office.'},
+    divider: {w: 170, h: 2, backgroundColor: '#334155'}, rectangle: {w: 160, h: 55, backgroundColor: '#dbe7f7'},
+    circle: {w: 55, h: 55, backgroundColor: '#dbe7f7'}, icon: {w: 32, h: 32, fontSize: 24, text: '★'}
+  };
+  /** One name per element: the same in the menus, Layers, the settings panel and Design Mapping. */
+  const LABELS = {
+    fullName: 'Full Name', firstName: 'First Name', middleName: 'Middle Name', lastName: 'Last Name',
+    idNumber: 'ID Number', barcodeNumber: 'Barcode', qrCode: 'QR Code',
+    class: 'Grade Level', section: 'Class / Section', homeroom: 'Homeroom / Advisory', teacherName: 'Teacher Name', transportation: 'Transportation',
+    title: 'Job Title', department: 'Department', campus: 'Campus', buildingRoom: 'Building / Room',
+    email: 'Email', phone: 'Phone', address: 'Address', emergencyContact: 'Emergency Contact', emergencyPhone: 'Emergency Phone',
+    dateOfBirth: 'Date of Birth', issueDate: 'Issue Date', expirationDate: 'Expiration Date', bloodType: 'Blood Type',
+    text: 'Other Field',
+    photo: 'Photo', logo: 'Logo', instructions: 'Text', schoolYear: 'School Year', image: 'Picture', signature: 'Signature',
+    rectangle: 'Rectangle', circle: 'Circle', divider: 'Line', icon: 'Symbol'
+  };
+  const DESIGN_ELEMENTS = ['image', 'logo', 'schoolYear', 'photo', 'signature', 'instructions', 'divider', 'rectangle', 'circle', 'icon'];
+  const DATA_ELEMENTS = Object.keys(LABELS).filter(type => !DESIGN_ELEMENTS.includes(type)).sort((a, b) => LABELS[a].localeCompare(LABELS[b]));
+  const NON_TEXT = ['signature', 'divider', 'rectangle', 'circle', 'logo', 'image', 'photo', 'barcodeNumber', 'qrCode', 'transportation', 'class'];
+  const IMAGE_TYPES = ['logo', 'image', 'signature'];
+  const EDITABLE_TEXT = ['schoolYear', 'instructions', 'icon'];
+  const BASE_SETTINGS = {
+    fontFamily: FONTS[0][0], color: '#111827', fontWeight: '400', align: 'center', verticalAlign: 'center', opacity: 1,
+    backgroundColor: 'transparent', borderColor: '#667085', borderWidth: 0, italic: false, underline: false, strike: false, rotation: 0
+  };
+  const TRANSPORT_SETTINGS = {
+    transportBusValues: 'Bus, School Bus', transportWalkValues: 'Walk, Walking, Walker',
+    transportPickupValues: 'Pick Up, Pickup, Car, Car Rider, Parent Pickup', transportNoneValues: 'None, N/A, No Transportation'
+  };
+  const GRADE_SETTINGS = {
+    classLabelFont: FONTS[0][0], classLabelColor: '#185adb', classLabelWeight: '700', classLabelItalic: false, classLabelAlign: 'flex-end', classLabelVerticalAlign: 'center',
+    classValueFont: FONTS[0][0], classValueColor: '#111827', classValueWeight: '900', classValueItalic: false, classValueAlign: 'flex-start', classValueVerticalAlign: 'center'
+  };
+  /** Example values for “Sample data”. */
+  const SAMPLE_VALUES = {
+    firstName: 'Alex', middleName: 'J.', lastName: 'Morgan', fullName: 'Alex Morgan', idNumber: '102345', barcodeNumber: '102345',
+    qrCode: 'https://example.org/id/102345', title: 'Science Teacher', class: '9', transportation: 'Bus', department: 'Science',
+    email: 'alex.morgan@school.org', phone: '(512) 555-0142', address: '123 Oak Street, Austin, TX', dateOfBirth: '04/12/2011',
+    issueDate: '08/15/2026', expirationDate: '06/30/2027', emergencyContact: 'Jamie Morgan', bloodType: 'O+',
+    campus: 'Lakeside High School', emergencyPhone: '(512) 555-0199', homeroom: 'Room 214', section: '9B', teacherName: 'Ms. Rivera',
+    buildingRoom: 'B-214', text: 'Sample text'
+  };
+  const SAMPLE_PHOTO = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 150"><rect width="120" height="150" fill="#d6dee8"/><circle cx="60" cy="58" r="26" fill="#9aa8bb"/><path d="M12 150c4-36 22-54 48-54s44 18 48 54z" fill="#9aa8bb"/></svg>');
+
+  // ---------- State ----------
+  let design = null;
+  let activeSide = 'front';
+  let selectedId = null;
+  let interaction = null;
+  let designTabs = [];
+  let activeTabId = '';
+  let guideTimer = null;
+  let imageUpload = null;
+  let zoom = 1.5;
+  let showSamples = false;
+
+  const uid = prefix => (prefix || 'el_') + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+  const spec = () => R.cardSpec(design);
+  const isText = type => !NON_TEXT.includes(type);
+  const hexOr = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
+  const clampFontSize = (value, fallback) => {
+    const number = Number(value);
+    return Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, Number.isFinite(number) ? number : fallback || 12));
+  };
+  function setStatus(message, isError) {
+    $('saveStatus').textContent = message;
+    $('saveStatus').classList.toggle('error', Boolean(isError));
+  }
+
+  // ---------- Model ----------
+  function ensureElementSettings(model) {
+    const fill = defaults => Object.keys(defaults).forEach(key => { if (model[key] === undefined) model[key] = defaults[key]; });
+    fill(BASE_SETTINGS);
+    model.fontSize = clampFontSize(model.fontSize, 12);
+    if (model.type === 'schoolYear' && model.text === undefined) model.text = '';
+    if (model.type === 'transportation') fill(TRANSPORT_SETTINGS);
+    if (model.type === 'photo') fill({photoFit: 'cover', photoFocus: 'center'});
+    if (model.type === 'class') {
+      fill(GRADE_SETTINGS);
+      model.classLabelSize = clampFontSize(model.classLabelSize, 12);
+      model.classValueSize = clampFontSize(model.classValueSize, 12);
+    }
+    return model;
+  }
+  function ensureTwoSides(target) {
+    target.frontElements = Array.isArray(target.frontElements) ? target.frontElements : Array.isArray(target.elements) ? target.elements : [];
+    target.backElements = Array.isArray(target.backElements) ? target.backElements : [];
+    target.frontElements.forEach(ensureElementSettings);
+    target.backElements.forEach(ensureElementSettings);
+    target.elements = target.frontElements;
+    return target;
+  }
+  /** Stores the card format, plus the old cardType name when it has one (for designs opened elsewhere). */
+  function setFormat(target, format) {
+    target.cardSize = format.size;
+    target.cardOrientation = format.orientation;
+    target.cardPunch = format.punch;
+    if (format.size === 'custom') {
+      target.customWidth = format.customWidth;
+      target.customHeight = format.customHeight;
+    } else {
+      delete target.customWidth;
+      delete target.customHeight;
+    }
+    target.cardType = format.size === 'cr80' && format.punch !== 'round'
+      ? format.orientation + (format.punch === 'slot' ? '-hole' : '-plain')
+      : 'sized';
+    return target;
+  }
+  function blankDesign(name, format) {
+    return setFormat({
+      designId: crypto.randomUUID(), name: name, dataSource: 'universal',
+      cardColor: '#ffffff', borderColor: '#98a2b3', cornerRadius: 12, typographyDefaultsVersion: 1,
+      elements: [], frontElements: [], backElements: []
+    }, Object.assign({customWidth: 2.125, customHeight: 3.375}, format || PORTRAIT_SLOT));
+  }
+  /** Builds an element with explicit geometry (used by templates and the Add menu). */
+  function makeElement(type, x, y, w, h, extra, z) {
+    const d = DEFAULTS[type];
+    return ensureElementSettings(Object.assign({
+      id: uid(), type: type, text: d.text || '', imageData: '', columnIndex: '',
+      x: x, y: y, w: w, h: h, z: z || 1,
+      fontSize: d.fontSize || 12, color: d.color || '#111827',
+      backgroundColor: d.backgroundColor || 'transparent', fontWeight: d.fontWeight || '400'
+    }, extra || {}));
+  }
+  const currentElements = () => activeSide === 'back' ? design.backElements : design.frontElements;
+  const selected = () => currentElements().find(item => item.id === selectedId) || null;
+  const topZ = () => currentElements().reduce((max, item) => Math.max(max, item.z || 0), 0);
+
+  function addElement(type, imageData) {
+    const d = DEFAULTS[type];
+    const s = spec();
+    const model = makeElement(type, Math.round((s.width - d.w) / 2), Math.round((s.height - d.h) / 2), d.w, d.h, null, topZ() + 1);
+    if (imageData) model.imageData = imageData;
+    currentElements().push(model);
+    selectedId = model.id;
+    render();
+    flashAlignment(model);
+  }
+  function deleteSelected() {
+    const elements = currentElements();
+    const index = elements.findIndex(item => item.id === selectedId);
+    if (index >= 0) elements.splice(index, 1);
+    selectedId = null;
+    render();
+  }
+  function duplicateSelected() {
+    const model = selected();
+    if (!model) return;
+    const copy = JSON.parse(JSON.stringify(model));
+    Object.assign(copy, {id: uid(), x: model.x + 8, y: model.y + 8, z: topZ() + 1, locked: false});
+    currentElements().push(copy);
+    selectedId = copy.id;
+    render();
+  }
+  /** Re-numbers z after a layer change so order stays 1..n. */
+  function arrange(action) {
+    const model = selected();
+    if (!model) return;
+    const s = spec();
+    if (action === 'center-x') model.x = Math.round((s.width - model.w) / 2);
+    else if (action === 'center-y') model.y = Math.round((s.height - model.h) / 2);
+    else {
+      const ordered = currentElements().slice().sort((a, b) => (a.z || 0) - (b.z || 0));
+      const index = ordered.indexOf(model);
+      ordered.splice(index, 1);
+      const target = action === 'front' ? ordered.length : action === 'back' ? 0 : action === 'forward' ? Math.min(ordered.length, index + 1) : Math.max(0, index - 1);
+      ordered.splice(target, 0, model);
+      ordered.forEach((item, i) => { item.z = i + 1; });
+    }
+    render();
+  }
+
+  // ---------- Templates ----------
+  const TEMPLATES = [
+    {id: 'blank', group: 'Blank', name: 'Blank portrait', note: 'CR80, slot for clip or lanyard', build: () => blankDesign('Untitled', PORTRAIT_SLOT)},
+    {id: 'blank-landscape', group: 'Blank', name: 'Blank landscape', note: 'CR80, no hole', build: () => blankDesign('Untitled', LANDSCAPE_PLAIN)},
+    {id: 'student', group: 'Students', name: 'Student card', note: 'Photo, name, grade, ID, barcode', build: () => {
+      const d = blankDesign('Student ID Card', PORTRAIT_SLOT);
+      let z = 0;
+      const e = (...args) => makeElement(args[0], args[1], args[2], args[3], args[4], args[5], ++z);
+      d.frontElements = [
+        e('rectangle', 0, 0, 204, 74, {backgroundColor: '#185adb'}),
+        e('logo', 40, 22, 124, 28),
+        e('schoolYear', 40, 52, 124, 18, {text: '2026–2027', color: '#ffffff'}),
+        e('photo', 54, 80, 96, 128),
+        e('fullName', 10, 218, 184, 28, {fontSize: 16, fontWeight: '900'}),
+        e('class', 42, 248, 120, 20),
+        e('idNumber', 30, 268, 144, 18),
+        e('barcodeNumber', 27, 290, 150, 26)
+      ];
+      d.backElements = [
+        e('instructions', 17, 40, 170, 90),
+        e('emergencyPhone', 22, 140, 160, 22),
+        e('signature', 37, 220, 130, 45),
+        e('divider', 37, 266, 130, 1, {backgroundColor: '#334155'})
+      ];
+      return d;
+    }},
+    {id: 'staff', group: 'Staff', name: 'Staff badge', note: 'Landscape: photo, name, role, QR', build: () => {
+      const d = blankDesign('Staff Badge', LANDSCAPE_PLAIN);
+      let z = 0;
+      const e = (...args) => makeElement(args[0], args[1], args[2], args[3], args[4], args[5], ++z);
+      d.frontElements = [
+        e('rectangle', 0, 0, 324, 46, {backgroundColor: '#7141c6'}),
+        e('logo', 12, 7, 130, 32),
+        e('instructions', 214, 12, 98, 22, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 16}),
+        e('photo', 14, 58, 99, 132),
+        e('fullName', 126, 64, 186, 30, {fontSize: 18, fontWeight: '900', align: 'left'}),
+        e('title', 126, 98, 186, 22, {align: 'left', color: '#7141c6'}),
+        e('department', 126, 122, 186, 20, {align: 'left'}),
+        e('idNumber', 126, 168, 130, 18, {align: 'left'}),
+        e('qrCode', 266, 146, 46, 46)
+      ];
+      return d;
+    }},
+    {id: 'visitor', group: 'Visitors & events', name: 'Visitor pass', note: 'Big heading, photo, name, expiry', build: () => {
+      const d = blankDesign('Visitor Pass', PORTRAIT_SLOT);
+      let z = 0;
+      const e = (...args) => makeElement(args[0], args[1], args[2], args[3], args[4], args[5], ++z);
+      d.frontElements = [
+        e('rectangle', 0, 0, 204, 92, {backgroundColor: '#0f8b8d'}),
+        e('instructions', 10, 32, 184, 44, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 32}),
+        e('photo', 57, 102, 90, 120),
+        e('fullName', 10, 232, 184, 28, {fontSize: 16, fontWeight: '900'}),
+        e('expirationDate', 22, 266, 160, 20),
+        e('campus', 22, 290, 160, 20, {color: '#0f8b8d'})
+      ];
+      return d;
+    }},
+    // ----- more templates -----
+    {id: 'student-landscape', group: 'Students', name: 'Student landscape', note: 'Photo left, name, grade, ID, barcode', build: () => template('Student Card (Landscape)', LANDSCAPE_PLAIN, e => ({
+      front: [
+        e('rectangle', 0, 0, 324, 40, {backgroundColor: '#185adb'}),
+        e('logo', 10, 6, 120, 28),
+        e('schoolYear', 214, 11, 100, 18, {text: '2026–2027', color: '#ffffff'}),
+        e('photo', 12, 50, 108, 144),
+        e('fullName', 132, 56, 182, 30, {fontSize: 18, fontWeight: '900', align: 'left'}),
+        e('class', 132, 90, 120, 22, {classLabelAlign: 'flex-start'}),
+        e('idNumber', 132, 116, 182, 20, {align: 'left'}),
+        e('barcodeNumber', 132, 144, 180, 46)
+      ]
+    }))},
+    {id: 'elementary', group: 'Students', name: 'Elementary student', note: 'Teacher, class, bus icon; emergency info on the back', build: () => template('Elementary Student Card', PORTRAIT_SLOT, e => ({
+      front: [
+        e('rectangle', 0, 0, 204, 64, {backgroundColor: '#1f883d'}),
+        e('logo', 40, 24, 124, 34),
+        e('photo', 45, 72, 114, 152),
+        e('fullName', 10, 230, 184, 26, {fontSize: 16, fontWeight: '900'}),
+        e('teacherName', 10, 258, 184, 18),
+        e('section', 10, 282, 130, 22, {align: 'left', color: '#1f883d'}),
+        e('transportation', 158, 274, 36, 36)
+      ],
+      back: [
+        e('instructions', 17, 30, 170, 64, {text: 'If found, please return this card to the school office.'}),
+        e('emergencyContact', 17, 110, 170, 24),
+        e('emergencyPhone', 17, 136, 170, 22, {fontWeight: '700'}),
+        e('address', 17, 164, 170, 36)
+      ]
+    }))},
+    {id: 'bus-pass', group: 'Students', name: 'Bus pass', note: 'Big heading, photo, grade, transportation icon', build: () => template('Bus Pass', PORTRAIT_SLOT, e => ({
+      front: [
+        e('rectangle', 0, 0, 204, 64, {backgroundColor: '#d97706'}),
+        e('instructions', 10, 26, 184, 30, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 22}),
+        e('photo', 57, 72, 90, 120),
+        e('fullName', 10, 198, 184, 26, {fontSize: 16, fontWeight: '900'}),
+        e('class', 42, 226, 120, 20),
+        e('transportation', 80, 252, 44, 44),
+        e('section', 22, 298, 160, 18, {color: '#b45309'})
+      ],
+      back: [
+        e('instructions', 17, 40, 170, 120, {text: 'Show this pass when boarding. Ride only your assigned bus. Lost pass? Tell the school office.'})
+      ]
+    }))},
+    {id: 'library', group: 'Students', name: 'Library card', note: 'Landscape: name, ID, large barcode', build: () => template('Library Card', LANDSCAPE_PLAIN, e => ({
+      front: [
+        e('rectangle', 0, 0, 324, 46, {backgroundColor: '#7141c6'}),
+        e('instructions', 12, 10, 200, 26, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 18, align: 'left'}),
+        e('logo', 230, 8, 84, 30),
+        e('fullName', 16, 58, 292, 28, {fontSize: 18, fontWeight: '900', align: 'left'}),
+        e('idNumber', 16, 90, 200, 20, {align: 'left'}),
+        e('barcodeNumber', 16, 118, 292, 54),
+        e('expirationDate', 16, 178, 200, 18, {align: 'left', color: '#475467'})
+      ]
+    }))},
+    {id: 'teacher', group: 'Staff', name: 'Teacher card', note: 'Portrait: photo, name, title, department', build: () => template('Teacher Card', PORTRAIT_SLOT, e => ({
+      front: [
+        e('rectangle', 0, 0, 204, 68, {backgroundColor: '#475467'}),
+        e('logo', 40, 24, 124, 34),
+        e('photo', 54, 78, 96, 128),
+        e('fullName', 10, 214, 184, 28, {fontSize: 16, fontWeight: '900'}),
+        e('title', 10, 244, 184, 20, {color: '#475467'}),
+        e('department', 10, 266, 184, 18),
+        e('idNumber', 10, 292, 184, 18, {color: '#667085'})
+      ]
+    }))},
+    {id: 'substitute', group: 'Staff', name: 'Substitute', note: 'Big heading, photo, name, valid until', build: () => template('Substitute Badge', PORTRAIT_SLOT, e => ({
+      front: [
+        e('rectangle', 0, 0, 204, 92, {backgroundColor: '#b42318'}),
+        e('instructions', 10, 34, 184, 40, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 24}),
+        e('photo', 57, 102, 90, 120),
+        e('fullName', 10, 230, 184, 28, {fontSize: 16, fontWeight: '900'}),
+        e('expirationDate', 22, 264, 160, 20),
+        e('campus', 22, 288, 160, 20, {color: '#b42318'})
+      ]
+    }))},
+    {id: 'volunteer', group: 'Visitors & events', name: 'Volunteer', note: 'Big heading, photo, name, campus', build: () => template('Volunteer Badge', PORTRAIT_SLOT, e => ({
+      front: [
+        e('rectangle', 0, 0, 204, 92, {backgroundColor: '#1f883d'}),
+        e('instructions', 10, 34, 184, 40, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 26}),
+        e('photo', 57, 102, 90, 120),
+        e('fullName', 10, 230, 184, 28, {fontSize: 16, fontWeight: '900'}),
+        e('expirationDate', 22, 264, 160, 20),
+        e('campus', 22, 288, 160, 20, {color: '#1f883d'})
+      ]
+    }))},
+    {id: 'visitor-large', group: 'Visitors & events', name: 'Large visitor (CR100)', note: 'Oversize, easy to read from a distance', build: () => template('Large Visitor Badge', {size: 'cr100', orientation: 'portrait', punch: 'slot'}, e => ({
+      front: [
+        e('rectangle', 0, 0, 252, 104, {backgroundColor: '#0f8b8d'}),
+        e('instructions', 12, 36, 228, 50, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '900', fontSize: 38}),
+        e('photo', 66, 114, 120, 160),
+        e('fullName', 12, 284, 228, 32, {fontSize: 20, fontWeight: '900'}),
+        e('expirationDate', 12, 320, 228, 20),
+        e('campus', 12, 344, 228, 20, {color: '#0f8b8d'})
+      ]
+    }))},
+    {id: 'event', group: 'Visitors & events', name: 'Event badge (3 × 4 in)', note: 'Very large name, role, QR code (paper)', build: () => template('Event Badge', {size: 'badge43', orientation: 'portrait', punch: 'round'}, e => ({
+      front: [
+        e('rectangle', 0, 0, 288, 92, {backgroundColor: '#185adb'}),
+        e('logo', 84, 30, 120, 46),
+        e('fullName', 14, 108, 260, 60, {fontSize: 40, fontWeight: '900'}),
+        e('title', 14, 172, 260, 30, {fontSize: 20, color: '#185adb', fontWeight: '700'}),
+        e('campus', 14, 206, 260, 24, {fontSize: 14}),
+        e('qrCode', 104, 244, 80, 80),
+        e('rectangle', 0, 342, 288, 42, {backgroundColor: '#17233a'}),
+        e('instructions', 14, 349, 260, 28, {text: 'TEMPLATE', color: '#ffffff', fontWeight: '800', fontSize: 16})
+      ]
+    }))}
+  ];
+  /** “Untitled”, then “Untitled 2”, “Untitled 3”… (not used by any open design). */
+  function nextDesignName() {
+    const taken = new Set(designTabs.map(tab => String(tab.design.name || '').toLowerCase()));
+    if (!taken.has('untitled')) return 'Untitled';
+    let n = 2;
+    while (taken.has('untitled ' + n)) n++;
+    return 'Untitled ' + n;
+  }
+  /** Builds a template design: layout(e) returns {front, back} lists made with e(type, x, y, w, h, style). */
+  function template(name, format, layout) {
+    const d = blankDesign(name, format);
+    let z = 0;
+    const parts = layout((type, x, y, w, h, extra) => makeElement(type, x, y, w, h, extra, ++z));
+    d.frontElements = parts.front || [];
+    d.backElements = parts.back || [];
+    return d;
+  }
+  /** The only tab is still the untouched empty card: a new design takes its place. */
+  function untouchedStartCard() {
+    if (designTabs.length !== 1) return null;
+    const tab = designTabs[0];
+    const empty = !tab.design.frontElements.length && !tab.design.backElements.length;
+    return empty && !tab.fileName && !isDirty(tab) ? tab : null;
+  }
+  /** startup = true: shown automatically when Design Studio opens. */
+  function openTemplates(startup) {
+    $('templateIntro').textContent = startup === true
+      ? 'Start from a template or a blank card, or open a design you saved before. Every element can be changed afterwards.'
+      : 'Start from a template or a blank card. Every element can be changed afterwards.';
+    $('templateCloseButton').textContent = startup === true ? 'Close' : 'Cancel';
+    const grid = $('templateGrid');
+    grid.replaceChildren();
+    let group = '';
+    const order = ['Blank', 'Students', 'Staff', 'Visitors & events'];
+    TEMPLATES.slice().sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group)).forEach(template => {
+      if (template.group !== group) {
+        group = template.group;
+        const heading = document.createElement('h3');
+        heading.className = 'template-group';
+        heading.textContent = group;
+        grid.appendChild(heading);
+      }
+      const sample = template.build();
+      ensureTwoSides(sample);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'template';
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      const mount = document.createElement('div');
+      const s = R.cardSpec(sample);
+      mount.style.width = s.width + 'px';
+      mount.style.height = s.height + 'px';
+      mount.style.transform = 'translate(-50%, -50%) scale(' + (104 / Math.max(s.width, s.height)) + ')';
+      thumb.appendChild(mount);
+      const name = document.createElement('strong');
+      name.textContent = template.name;
+      const note = document.createElement('small');
+      note.textContent = template.note;
+      button.append(thumb, name, note);
+      button.onclick = () => {
+        $('templateDialog').close();
+        const fresh = template.build();
+        // Template names are only labels in this window; every new design starts with a neutral name.
+        fresh.name = untouchedStartCard() ? 'Untitled' : nextDesignName();
+        addTab(fresh, '');
+      };
+      grid.appendChild(button);
+      R.render(mount, sample, {}, {samples: true});
+    });
+    $('templateDialog').showModal();
+  }
+
+  // ---------- Images ----------
+  function chooseImage(kind, target) {
+    imageUpload = {kind: kind, target: target || null};
+    $('imageFileInput').click();
+  }
+  function readImage(file, trim) {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const original = reader.result;
+        const image = new Image();
+        image.onload = () => {
+          try { resolve(trim ? trimmedLogo(image) : scaledImage(image, 1600, file.type)); } catch (error) { resolve(original); }
+        };
+        image.onerror = () => resolve(original);
+        image.src = original;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  function scaledImage(image, maxSize, mime) {
+    const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL(mime === 'image/jpeg' ? 'image/jpeg' : 'image/png', 0.9);
+  }
+  /** Crops transparent or white margins so the logo fills its box. */
+  function trimmedLogo(image) {
+    const scale = Math.min(1, 1000 / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', {willReadFrequently: true});
+    context.drawImage(image, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    let minX = width, minY = height, maxX = -1, maxY = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const white = pixels[i] > 248 && pixels[i + 1] > 248 && pixels[i + 2] > 248;
+        if (pixels[i + 3] > 12 && !white) {
+          minX = Math.min(minX, x); minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+        }
+      }
+    }
+    if (maxX < minX) return scaledImage(image, 1600, 'image/png');
+    const pad = Math.max(2, Math.round(Math.max(maxX - minX + 1, maxY - minY + 1) * 0.02));
+    minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+    maxX = Math.min(width - 1, maxX + pad); maxY = Math.min(height - 1, maxY + pad);
+    const sw = (maxX - minX + 1) / scale;
+    const sh = (maxY - minY + 1) / scale;
+    const outputScale = Math.min(1, 1600 / Math.max(sw, sh));
+    const output = document.createElement('canvas');
+    output.width = Math.max(1, Math.round(sw * outputScale));
+    output.height = Math.max(1, Math.round(sh * outputScale));
+    output.getContext('2d').drawImage(image, minX / scale, minY / scale, sw, sh, 0, 0, output.width, output.height);
+    return output.toDataURL('image/png');
+  }
+  $('imageFileInput').onchange = async event => {
+    const file = event.target.files[0];
+    const upload = imageUpload;
+    event.target.value = '';
+    if (!file || !upload) return;
+    if (!file.type.startsWith('image/')) return setStatus('Please choose an image file.', true);
+    const tabId = activeTabId;
+    const side = activeSide;
+    const data = await readImage(file, upload.kind === 'logo');
+    if (tabId !== activeTabId || side !== activeSide) return setStatus('Return to the original design and side, then add the image again.', true);
+    if (upload.target) {
+      if (!currentElements().includes(upload.target)) return;
+      upload.target.imageData = data;
+      render();
+    } else {
+      addElement(upload.kind, data);
+    }
+  };
+  function insert(type) {
+    if (IMAGE_TYPES.includes(type)) chooseImage(type);
+    else addElement(type);
+  }
+
+  // ---------- Rendering ----------
+  function addHandles(node, model) {
+    ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(corner => {
+      const handle = document.createElement('div');
+      handle.className = 'resize-handle ' + corner;
+      handle.dataset.corner = corner;
+      handle.addEventListener('pointerdown', startResize);
+      node.appendChild(handle);
+    });
+    const rotate = document.createElement('div');
+    rotate.className = 'rotate-handle';
+    rotate.title = 'Drag to rotate';
+    rotate.dataset.angle = Math.round(Number(model.rotation || 0)) + '°';
+    rotate.textContent = '↻';
+    rotate.addEventListener('pointerdown', startRotate);
+    node.appendChild(rotate);
+  }
+  function elementOptions() {
+    return showSamples ? {samples: true, sampleValues: SAMPLE_VALUES, photoData: SAMPLE_PHOTO} : {samples: true};
+  }
+  function render() {
+    hideGuides();
+    const s = spec();
+    Object.assign(card.style, {
+      width: s.width + 'px', height: s.height + 'px', background: design.cardColor,
+      borderColor: design.borderColor, borderRadius: design.cornerRadius + 'px',
+      transform: 'scale(' + zoom + ')'
+    });
+    $('cardSizer').style.width = s.width * zoom + 'px';
+    $('cardSizer').style.height = s.height * zoom + 'px';
+    $('zoomValue').textContent = Math.round(zoom * 100) + '%';
+    $('lanyard').hidden = !s.hole;
+    $('lanyard').classList.toggle('round', s.punch === 'round');
+    $('sizeLabel').textContent = s.label + ' · ' + s.inchLabel + ' · ' + (activeSide === 'front' ? 'Front' : 'Back') + ' side';
+    card.querySelectorAll('.design-element').forEach(node => node.remove());
+    const options = elementOptions();
+    currentElements().filter(model => !model.hidden).sort((a, b) => (a.z || 0) - (b.z || 0)).forEach(model => {
+      const node = R.renderElement(model, design, {}, options);
+      node.classList.add('design-element');
+      node.classList.toggle('selected', model.id === selectedId);
+      node.classList.toggle('locked', Boolean(model.locked));
+      node.dataset.id = model.id;
+      node.addEventListener('pointerdown', startMove);
+      node.addEventListener('click', event => { event.stopPropagation(); selectElement(model.id); });
+      if (model.id === selectedId && !model.locked) addHandles(node, model);
+      card.appendChild(node);
+      R.fitElement(node, model);
+    });
+    renderLayers();
+    syncInspector();
+    renderDesignTabs();
+    scheduleHistory();
+  }
+  function renderLayers() {
+    const host = $('layers');
+    host.replaceChildren();
+    const elements = currentElements().slice().sort((a, b) => (b.z || 0) - (a.z || 0));
+    $('layerCount').textContent = elements.length ? elements.length + ' on ' + activeSide : '';
+    if (!elements.length) {
+      host.innerHTML = '<div class="empty-state">This side is empty.<br>Use the <b>Add</b> icons at the left of the card, or start from a template with the <b>＋</b> tab</div>';
+      return;
+    }
+    elements.forEach(model => {
+      const row = document.createElement('div');
+      row.className = 'layer' + (model.id === selectedId ? ' active' : '') + (model.hidden ? ' is-hidden' : '');
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'layer-name';
+      let label = LABELS[model.type] || model.type;
+      if (EDITABLE_TEXT.includes(model.type) && model.text) label += ': ' + model.text;
+      name.textContent = label;
+      name.title = label;
+      name.onclick = () => selectElement(model.id);
+      const toggle = (symbol, prop, onLabel, offLabel) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'layer-toggle';
+        const on = prop === 'hidden' ? !model.hidden : Boolean(model.locked);
+        button.textContent = prop === 'hidden' ? (model.hidden ? '◌' : '👁') : (model.locked ? '🔒' : '🔓');
+        button.setAttribute('aria-pressed', String(on));
+        button.title = on ? onLabel : offLabel;
+        button.setAttribute('aria-label', button.title + ' — ' + label);
+        button.onclick = () => { model[prop] = !model[prop]; render(); };
+        return button;
+      };
+      row.append(name, toggle('', 'hidden', 'Visible — click to hide', 'Hidden — click to show'), toggle('', 'locked', 'Locked — click to unlock', 'Unlocked — click to lock'));
+      host.appendChild(row);
+    });
+  }
+  function selectElement(id) {
+    selectedId = id;
+    render();
+  }
+
+  // ---------- Alignment guides ----------
+  function hideGuides() {
+    $('verticalGuide').style.display = 'none';
+    $('horizontalGuide').style.display = 'none';
+    clearTimeout(guideTimer);
+  }
+  function showGuides(vertical, horizontal, duration) {
+    const s = spec();
+    const v = $('verticalGuide');
+    const h = $('horizontalGuide');
+    v.style.display = vertical === null ? 'none' : 'block';
+    h.style.display = horizontal === null ? 'none' : 'block';
+    if (vertical !== null) v.style.left = Math.max(0, Math.min(s.width - 1, vertical)) + 'px';
+    if (horizontal !== null) h.style.top = Math.max(0, Math.min(s.height - 1, horizontal)) + 'px';
+    if (duration) {
+      clearTimeout(guideTimer);
+      guideTimer = setTimeout(hideGuides, duration);
+    }
+  }
+  /** Snaps edges/centers to the card and to other elements (within 8 px of card space). */
+  function alignedPosition(model, nextX, nextY) {
+    const s = spec();
+    const xTargets = [0, s.width / 2, s.width];
+    const yTargets = [0, s.height / 2, s.height];
+    currentElements().forEach(item => {
+      if (item.id === model.id || item.hidden) return;
+      xTargets.push(item.x, item.x + item.w / 2, item.x + item.w);
+      yTargets.push(item.y, item.y + item.h / 2, item.y + item.h);
+    });
+    const best = (targets, start, size) => {
+      let found = null;
+      targets.forEach(target => [0, size / 2, size].forEach(offset => {
+        const delta = target - (start + offset);
+        if (Math.abs(delta) <= 8 && (!found || Math.abs(delta) < found.distance)) found = {distance: Math.abs(delta), value: start + delta, line: target};
+      }));
+      return found;
+    };
+    const bx = best(xTargets, nextX, model.w);
+    const by = best(yTargets, nextY, model.h);
+    return {x: bx ? bx.value : nextX, y: by ? by.value : nextY, vertical: bx ? bx.line : null, horizontal: by ? by.line : null};
+  }
+  function flashAlignment(model) {
+    const aligned = alignedPosition(model, model.x, model.y);
+    showGuides(aligned.vertical, aligned.horizontal, 2200);
+  }
+
+  // ---------- Pointer interactions ----------
+  function beginInteraction(event, node, state) {
+    interaction = state;
+    node.setPointerCapture(event.pointerId);
+    node.addEventListener('pointermove', continueInteraction);
+    node.addEventListener('pointerup', endInteraction);
+  }
+  function startMove(event) {
+    if (event.target.classList.contains('resize-handle') || event.target.classList.contains('rotate-handle')) return;
+    event.stopPropagation();
+    const node = event.currentTarget;
+    const model = currentElements().find(item => item.id === node.dataset.id);
+    if (!model) return;
+    if (selectedId !== model.id) {
+      selectedId = model.id;
+      card.querySelectorAll('.design-element').forEach(n => n.classList.toggle('selected', n.dataset.id === selectedId));
+      renderLayers();
+      syncInspector();
+    }
+    if (model.locked) return;
+    event.preventDefault();
+    beginInteraction(event, node, {mode: 'move', id: model.id, startX: event.clientX, startY: event.clientY, x: model.x, y: model.y, moved: false});
+  }
+  function startResize(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const node = event.currentTarget.parentElement;
+    const model = currentElements().find(item => item.id === node.dataset.id);
+    beginInteraction(event, node, {
+      mode: 'resize', id: model.id, corner: event.currentTarget.dataset.corner,
+      x: model.x, y: model.y, w: model.w, h: model.h, rotation: Number(model.rotation || 0)
+    });
+  }
+  function startRotate(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const node = event.currentTarget.parentElement;
+    const model = currentElements().find(item => item.id === node.dataset.id);
+    const rect = node.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    beginInteraction(event, node, {
+      mode: 'rotate', id: model.id, centerX: centerX, centerY: centerY,
+      startAngle: Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI,
+      rotation: Number(model.rotation || 0)
+    });
+  }
+  function snapRotation(value) {
+    const angle = ((Number(value) + 180) % 360 + 360) % 360 - 180;
+    const nearest = [-180, -135, -90, -45, 0, 45, 90, 135, 180].reduce((a, b) => Math.abs(angle - b) < Math.abs(angle - a) ? b : a);
+    return Math.abs(angle - nearest) <= 7 ? nearest : Math.round(angle);
+  }
+  function continueInteraction(event) {
+    if (!interaction) return;
+    const model = currentElements().find(item => item.id === interaction.id);
+    if (!model) return;
+    const rect = card.getBoundingClientRect();
+    const s = spec();
+    const scaleX = rect.width ? s.width / rect.width : 1;
+    const scaleY = rect.height ? s.height / rect.height : 1;
+    if (interaction.mode === 'move') {
+      const dx = (event.clientX - interaction.startX) * scaleX;
+      const dy = (event.clientY - interaction.startY) * scaleY;
+      if (!interaction.moved && Math.abs(dx) + Math.abs(dy) < 2) return;
+      interaction.moved = true;
+      const aligned = alignedPosition(model, interaction.x + dx, interaction.y + dy);
+      model.x = Math.round(aligned.x);
+      model.y = Math.round(aligned.y);
+      showGuides(aligned.vertical, aligned.horizontal);
+    } else if (interaction.mode === 'rotate') {
+      hideGuides();
+      const angle = Math.atan2(event.clientY - interaction.centerY, event.clientX - interaction.centerX) * 180 / Math.PI;
+      model.rotation = snapRotation(interaction.rotation + angle - interaction.startAngle);
+    } else {
+      hideGuides();
+      // Keep the opposite corner fixed and resize in the element's rotated frame.
+      const angle = interaction.rotation * Math.PI / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const corner = interaction.corner;
+      const resizeX = /[ew]/.test(corner);
+      const resizeY = /[ns]/.test(corner);
+      const signX = corner.includes('w') ? -1 : 1;
+      const signY = corner.includes('n') ? -1 : 1;
+      const cx = interaction.x + interaction.w / 2;
+      const cy = interaction.y + interaction.h / 2;
+      const ox = resizeX ? -signX * interaction.w / 2 : 0;
+      const oy = resizeY ? -signY * interaction.h / 2 : 0;
+      const anchorX = cx + ox * cos - oy * sin;
+      const anchorY = cy + ox * sin + oy * cos;
+      const px = (event.clientX - rect.left) * scaleX - anchorX;
+      const py = (event.clientY - rect.top) * scaleY - anchorY;
+      const localX = px * cos + py * sin;
+      const localY = -px * sin + py * cos;
+      const minH = model.type === 'divider' ? 1 : 10;
+      const w = resizeX ? Math.max(10, Math.min(2000, signX * localX)) : interaction.w;
+      const h = resizeY ? Math.max(minH, Math.min(2000, signY * localY)) : interaction.h;
+      const ddx = resizeX ? signX * w / 2 : 0;
+      const ddy = resizeY ? signY * h / 2 : 0;
+      model.w = Math.round(w);
+      model.h = Math.round(h);
+      model.x = Math.round(anchorX + ddx * cos - ddy * sin - w / 2);
+      model.y = Math.round(anchorY + ddx * sin + ddy * cos - h / 2);
+    }
+    const node = card.querySelector('[data-id="' + model.id + '"]');
+    if (node) {
+      Object.assign(node.style, {
+        left: model.x + 'px', top: model.y + 'px', width: model.w + 'px', height: model.h + 'px',
+        transform: 'rotate(' + Number(model.rotation || 0) + 'deg)'
+      });
+      const handle = node.querySelector('.rotate-handle');
+      if (handle) handle.dataset.angle = Math.round(Number(model.rotation || 0)) + '°';
+      R.fitElement(node, model);
+    }
+  }
+  function endInteraction(event) {
+    event.currentTarget.removeEventListener('pointermove', continueInteraction);
+    event.currentTarget.removeEventListener('pointerup', endInteraction);
+    interaction = null;
+    render();
+  }
+  card.addEventListener('click', event => {
+    if (event.target === card) { selectedId = null; render(); }
+  });
+  document.querySelector('.card-shell').addEventListener('click', event => {
+    if (event.target.classList.contains('card-shell')) { selectedId = null; render(); }
+  });
+
+  // ---------- Properties panel ----------
+  function fontOptions() {
+    return FONTS.map(([value, label]) => '<option value="' + value.replace(/"/g, '&quot;') + '">' + label + '</option>').join('');
+  }
+  function alignIcon(value, vertical) {
+    const path = d => '<path d="' + d + '" stroke="currentColor" stroke-width="1.8" fill="none"/>';
+    if (vertical) {
+      const y = value === 'flex-start' ? 5 : value === 'flex-end' ? 13 : 9;
+      return '<svg viewBox="0 0 24 24">' + path('M3 2H21M3 22H21') + path('M6 ' + y + 'H18M8 ' + (y + 3) + 'H16M6 ' + (y + 6) + 'H18') + '</svg>';
+    }
+    const lines = [18, 12, 18, 10].map((width, index) => {
+      const x = /right|end/.test(value) ? 21 - width : value === 'center' ? (24 - width) / 2 : 3;
+      return 'M' + x + ' ' + (5 + index * 4) + 'H' + (x + width);
+    }).join('');
+    return '<svg viewBox="0 0 24 24">' + path(lines) + '</svg>';
+  }
+  /** One text style block; the Grade element uses its own classLabel/classValue properties. */
+  function textControls(props, horizontalValues, fullStyles) {
+    const names = {left: 'left', 'flex-start': 'left', center: 'center', right: 'right', 'flex-end': 'right'};
+    const style = (prop, value, off, label, html) =>
+      '<button class="tool" type="button" data-prop="' + prop + '"' + (value ? ' data-value="' + value + '" data-off="' + off + '"' : ' data-toggle') + ' aria-label="' + label + '" title="' + label + '">' + html + '</button>';
+    return '<div class="font-row">' +
+        '<div><label>Font</label><select class="input" data-prop="' + props.font + '">' + fontOptions() + '</select></div>' +
+        '<div><label title="Long text shrinks to fit the box; this is the largest size">Size</label><div class="size-control"><button class="tool" type="button" data-step="-1" aria-label="Smaller">−</button>' +
+          '<div class="size-combo"><input class="input" type="number" min="1" max="72" data-prop="' + props.size + '" data-kind="size" data-commit>' +
+          '<button class="size-open" type="button" aria-label="Font sizes">▾</button><div class="size-menu" hidden></div></div>' +
+          '<button class="tool" type="button" data-step="1" aria-label="Larger">+</button></div></div>' +
+      '</div>' +
+      '<div class="style-row' + (fullStyles ? '' : ' grade') + '">' +
+        style(props.weight, '700', '400', 'Bold', '<b>B</b>') +
+        style(props.weight, '900', '400', 'Extra bold', '<b style="font-family:Arial Black,Arial">B+</b>') +
+        style(props.italic, '', '', 'Italic', '<i style="font-family:Georgia,serif">I</i>') +
+        (fullStyles ? style('underline', '', '', 'Underline', '<u>U</u>') + style('strike', '', '', 'Strikethrough', '<s>S</s>') : '') +
+      '</div>' +
+      '<div class="align-labels"><span>Across</span><span>Up / down</span></div>' +
+      '<div class="align-row"><div>' +
+        horizontalValues.map(value => '<button class="tool" type="button" data-prop="' + props.align + '" data-value="' + value + '" aria-label="Align ' + names[value] + '" title="Align ' + names[value] + '">' + alignIcon(value, false) + '</button>').join('') +
+      '</div><div>' +
+        ['flex-start', 'center', 'flex-end'].map((value, i) => '<button class="tool" type="button" data-prop="' + props.valign + '" data-value="' + value + '" aria-label="' + ['Top', 'Middle', 'Bottom'][i] + '" title="' + ['Top', 'Middle', 'Bottom'][i] + '">' + alignIcon(value, true) + '</button>').join('') +
+      '</div></div>';
+  }
+  function buildInspector() {
+    $('textGroup').innerHTML = '<h4>Font &amp; alignment</h4>' + textControls(
+      {font: 'fontFamily', size: 'fontSize', weight: 'fontWeight', italic: 'italic', align: 'align', valign: 'verticalAlign'},
+      ['left', 'center', 'right'], true) + '<p class="hint">Long text shrinks automatically to fit its box.</p>';
+    const grade = prefix => textControls(
+      {font: prefix + 'Font', size: prefix + 'Size', weight: prefix + 'Weight', italic: prefix + 'Italic', align: prefix + 'Align', valign: prefix + 'VerticalAlign'},
+      ['flex-start', 'center', 'flex-end'], false);
+    $('gradeGroup').innerHTML = '<h4>Grade text</h4>' +
+      '<details class="grade-part" open><summary>“Grade” label</summary>' + grade('classLabel') + '</details>' +
+      '<details class="grade-part"><summary>Grade number</summary>' + grade('classValue') + '</details>';
+    const sizes = [];
+    for (let n = 7; n <= 20; n++) sizes.push(n);
+    for (let n = 22; n <= 72; n += 2) sizes.push(n);
+    document.querySelectorAll('.size-menu').forEach(menu => {
+      sizes.forEach(size => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.textContent = size;
+        option.onclick = () => {
+          menu.hidden = true;
+          setProp(menu.parentElement.querySelector('input').dataset.prop, size, 'size');
+        };
+        menu.appendChild(option);
+      });
+    });
+  }
+  function convert(raw, kind) {
+    if (kind === 'size') return clampFontSize(raw, 12);
+    if (kind === 'angle') return Math.max(-180, Math.min(180, Number(raw) || 0));
+    if (kind === 'number') return Number(raw);
+    return raw;
+  }
+  function setProp(prop, raw, kind) {
+    const model = selected();
+    if (!model) return;
+    model[prop] = convert(raw, kind);
+    if (prop === 'borderWidth') model.savedBorderWidth = model.borderWidth;
+    render();
+  }
+  const inspector = $('inspector');
+  // Text-like inputs apply while typing; number fields (data-commit) apply on change/Enter.
+  inspector.addEventListener('input', event => {
+    const target = event.target;
+    if (!target.dataset.prop || target.tagName === 'SELECT' || 'commit' in target.dataset) return;
+    setProp(target.dataset.prop, target.value, target.dataset.kind);
+  });
+  inspector.addEventListener('change', event => {
+    const target = event.target;
+    if (target.dataset.prop && target.tagName !== 'BUTTON') setProp(target.dataset.prop, target.value, target.dataset.kind);
+  });
+  inspector.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && 'commit' in event.target.dataset) {
+      event.preventDefault();
+      setProp(event.target.dataset.prop, event.target.value, event.target.dataset.kind);
+    }
+  });
+  inspector.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button || !inspector.contains(button)) return;
+    const model = selected();
+    if (!model) return;
+    if (button.dataset.step) {
+      const input = button.parentElement.querySelector('input');
+      setProp(input.dataset.prop, Number(input.value || 12) + Number(button.dataset.step), 'size');
+    } else if (button.classList.contains('size-open')) {
+      button.nextElementSibling.hidden = !button.nextElementSibling.hidden;
+    } else if (button.dataset.opacityStep) {
+      model.opacity = Math.max(0.1, Math.min(1, (model.opacity === undefined ? 1 : model.opacity) + Number(button.dataset.opacityStep) / 100));
+      render();
+    } else if (button.dataset.arrange) {
+      arrange(button.dataset.arrange);
+    } else if (button.dataset.prop && 'toggle' in button.dataset) {
+      setProp(button.dataset.prop, !model[button.dataset.prop]);
+    } else if (button.dataset.prop) {
+      const value = button.dataset.value;
+      const current = String(model[button.dataset.prop]);
+      setProp(button.dataset.prop, button.dataset.off !== undefined && current === value ? button.dataset.off : value, button.dataset.kind);
+    }
+  });
+  $('opacity').oninput = event => {
+    const model = selected();
+    if (!model) return;
+    model.opacity = Math.max(0.1, Math.min(1, Number(event.target.value) / 100));
+    $('opacityValue').textContent = Math.round(model.opacity * 100) + '%';
+    const node = card.querySelector('[data-id="' + model.id + '"]');
+    if (node) node.style.opacity = String(model.opacity);
+  };
+  $('opacity').onchange = () => render();
+  $('borderToggle').onclick = () => {
+    const model = selected();
+    if (!model) return;
+    if (Number(model.borderWidth || 0) > 0) {
+      model.savedBorderWidth = Number(model.borderWidth);
+      model.borderWidth = 0;
+    } else {
+      model.borderWidth = Number(model.savedBorderWidth) > 0 ? Number(model.savedBorderWidth) : 1;
+    }
+    render();
+  };
+  $('replaceImageButton').onclick = () => { const model = selected(); if (model) chooseImage(model.type, model); };
+  $('duplicateButton').onclick = duplicateSelected;
+  /**
+   * Gives the frame the photo's 3 : 4 shape around the same center,
+   * no taller than 60% of the card, and keeps it inside the card.
+   */
+  $('photoShapeButton').onclick = () => {
+    const model = selected();
+    if (!model || model.type !== 'photo') return;
+    const card = spec();
+    const centerX = model.x + model.w / 2;
+    const centerY = model.y + model.h / 2;
+    let h = Math.min(card.height * 0.6, Math.max(model.h, model.w * 4 / 3));
+    let w = h * 3 / 4;
+    if (w > card.width * 0.9) { w = card.width * 0.9; h = w * 4 / 3; }
+    model.w = Math.round(w);
+    model.h = Math.round(h);
+    model.x = Math.round(Math.max(0, Math.min(card.width - model.w, centerX - model.w / 2)));
+    model.y = Math.round(Math.max(0, Math.min(card.height - model.h, centerY - model.h / 2)));
+    render();
+  };
+  $('deleteElementButton').onclick = deleteSelected;
+  $('symbolChoice').onchange = event => {
+    const model = selected();
+    if (!model) return;
+    if (event.target.value === 'custom') {
+      $('textContentField').hidden = false;
+      $('textContent').focus();
+      return;
+    }
+    model.text = event.target.value;
+    render();
+  };
+
+  function syncInspector() {
+    const model = selected();
+    $('cardSettings').hidden = Boolean(model);
+    inspector.hidden = !model;
+    if (!model) return;
+    ensureElementSettings(model);
+    const type = model.type;
+    const editable = EDITABLE_TEXT.includes(type);
+    $('selectedName').textContent = LABELS[type] + (model.locked ? ' 🔒' : '');
+    $('contentGroup').hidden = !editable && !IMAGE_TYPES.includes(type);
+    $('textContentField').hidden = !editable;
+    // Where the value comes from: the spreadsheet (per person) or the design (same on every card).
+    const fromSheet = DATA_ELEMENTS.includes(type);
+    $('sourceNote').className = 'source-note ' + (fromSheet ? 'sheet' : 'same');
+    $('sourceNote').textContent = fromSheet
+      ? 'From your data source — each card shows that person’s value. Connect it in Card Studio → ⚙ Settings → Design Mapping.'
+      : type === 'photo' ? 'Each card shows that person’s photo.' : 'Same on every card.';
+    $('textContentLabel').textContent = type === 'icon' ? 'Your symbol' : type === 'schoolYear' ? 'School year' : 'Text on every card';
+    $('textContent').rows = type === 'instructions' ? 3 : 1;
+    $('textContent').placeholder = type === 'schoolYear' ? 'e.g. 2026–2027' : type === 'icon' ? 'Type or paste one symbol' : 'Text shown on every card';
+    $('symbolTools').hidden = type !== 'icon';
+    if (type === 'icon') {
+      // One list; “Other…” shows a box for typing your own symbol.
+      const known = Array.from($('symbolChoice').options).some(option => option.value === model.text);
+      $('symbolChoice').value = known ? model.text : 'custom';
+      $('textContentField').hidden = known;
+    }
+    $('replaceImageButton').hidden = !IMAGE_TYPES.includes(type);
+    $('transportGroup').hidden = type !== 'transportation';
+    $('photoGroup').hidden = type !== 'photo';
+    if (type === 'photo') {
+      // A photo is 3 : 4. Tell people when their frame shape will crop it.
+      const ratio = model.w / model.h;
+      const off = Math.abs(ratio - 0.75) / 0.75;
+      $('photoShapeNote').textContent = off < 0.08 ? 'This frame already has the photo’s shape — nothing is cropped.'
+        : (model.photoFit === 'contain' ? 'The whole photo is shown; the frame has empty space at the ' + (ratio > 0.75 ? 'sides.' : 'top and bottom.')
+        : 'This frame is ' + (ratio > 0.75 ? 'wider' : 'taller') + ' than a photo, so part of each photo is cropped.');
+      $('photoShapeNote').style.color = off < 0.08 || model.photoFit === 'contain' ? '' : '#b45309';
+    }
+    $('textGroup').hidden = !isText(type);
+    $('gradeGroup').hidden = type !== 'class';
+    document.querySelectorAll('[data-show]').forEach(row => {
+      row.hidden = row.dataset.show === 'text' ? !isText(type) : type !== 'class';
+    });
+    inspector.querySelectorAll('input[data-prop], select[data-prop], textarea[data-prop]').forEach(control => {
+      if (control === document.activeElement) return;
+      let value = model[control.dataset.prop];
+      if (control.type === 'color') value = hexOr(value, control.dataset.prop === 'backgroundColor' ? '#ffffff' : '#111827');
+      if (control.dataset.prop === 'borderWidth') {
+        value = String(Number(model.borderWidth || model.savedBorderWidth || 1));
+        if (!Array.from(control.options).some(option => option.value === value)) control.add(new Option(value + ' px', value));
+      }
+      control.value = value === undefined ? '' : value;
+    });
+    inspector.querySelectorAll('button[data-prop]').forEach(button => {
+      const value = model[button.dataset.prop];
+      let pressed = 'toggle' in button.dataset ? Boolean(value) : String(value) === button.dataset.value;
+      if (button.dataset.prop === 'rotation' && button.dataset.value === '180') pressed = Math.abs(Math.abs(Number(value)) - 180) < 0.01;
+      button.setAttribute('aria-pressed', String(pressed));
+    });
+    const hasBorder = Number(model.borderWidth || 0) > 0;
+    $('borderToggle').setAttribute('aria-pressed', String(hasBorder));
+    $('borderToggle').textContent = hasBorder ? 'On' : 'Off';
+    $('borderDetails').hidden = !hasBorder;
+    $('borderColorRow').hidden = !hasBorder;
+    const opacity = Math.round((model.opacity === undefined ? 1 : model.opacity) * 100);
+    $('opacity').value = String(opacity);
+    $('opacityValue').textContent = opacity + '%';
+  }
+
+  // ---------- Card settings ----------
+  function syncControls() {
+    const format = R.cardFormat(design);
+    $('designName').value = design.name;
+    $('cardSize').value = format.size;
+    $('cardPunch').value = format.punch;
+    $('customWidth').value = format.customWidth;
+    $('customHeight').value = format.customHeight;
+    $('customSizeFields').hidden = format.size !== 'custom';
+    $('orientationField').hidden = format.size === 'custom';
+    document.querySelectorAll('[data-orientation]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.orientation === format.orientation)));
+    $('cardSizeNote').textContent = format.size === 'custom' ? 'Type the exact width and height in inches.' : R.CARD_SIZES[format.size].note;
+    $('printerNote').hidden = ['cr80', 'cr79'].includes(format.size);
+    $('cardColor').value = hexOr(design.cardColor, '#ffffff');
+    $('borderColor').value = hexOr(design.borderColor, '#98a2b3');
+    $('cornerRadius').value = design.cornerRadius;
+    $('cornerValue').textContent = design.cornerRadius + 'px';
+  }
+  $('cardSize').replaceChildren(
+    ...Object.keys(R.CARD_SIZES).map(key => {
+      const size = R.CARD_SIZES[key];
+      return new Option(size.name + ' — ' + size.inches[0] + ' × ' + size.inches[1] + ' in', key);
+    }),
+    new Option('Custom size…', 'custom'));
+  /** Changes size, direction, hole or custom dimensions; elements keep their positions. */
+  function changeFormat(changes) {
+    const before = R.cardFormat(design);
+    const format = Object.assign({}, before, changes);
+    if (changes.size === 'custom' && before.size !== 'custom') {
+      // Start the custom size from the current card's real size, in its current direction.
+      const inches = R.CARD_SIZES[before.size].inches;
+      const landscape = before.orientation === 'landscape';
+      format.customWidth = landscape ? inches[1] : inches[0];
+      format.customHeight = landscape ? inches[0] : inches[1];
+    }
+    setFormat(design, format);
+    syncControls();
+    render();
+  }
+  $('cardSize').onchange = event => changeFormat({size: event.target.value});
+  $('cardPunch').onchange = event => changeFormat({punch: event.target.value});
+  document.querySelectorAll('[data-orientation]').forEach(button => {
+    button.onclick = () => changeFormat({orientation: button.dataset.orientation});
+  });
+  ['customWidth', 'customHeight'].forEach(id => {
+    $(id).onchange = () => changeFormat({customWidth: $('customWidth').value, customHeight: $('customHeight').value});
+  });
+  ['cardColor', 'borderColor', 'cornerRadius'].forEach(id => {
+    $(id).oninput = () => {
+      design.cardColor = $('cardColor').value;
+      design.borderColor = $('borderColor').value;
+      design.cornerRadius = Number($('cornerRadius').value);
+      $('cornerValue').textContent = design.cornerRadius + 'px';
+      render();
+    };
+  });
+  $('designName').oninput = event => {
+    design.name = event.target.value || 'Untitled';
+    renderDesignTabs();
+    scheduleHistory();
+  };
+  function switchSide(side) {
+    activeSide = side;
+    selectedId = null;
+    $('frontSideTab').setAttribute('aria-pressed', String(side === 'front'));
+    $('backSideTab').setAttribute('aria-pressed', String(side === 'back'));
+    render();
+  }
+  document.querySelectorAll('[data-side]').forEach(button => { button.onclick = () => switchSide(button.dataset.side); });
+  function setZoom(next) {
+    zoom = next;
+    render();
+  }
+  $('zoomIn').onclick = () => setZoom(ZOOMS.find(z => z > zoom) || zoom);
+  $('zoomOut').onclick = () => setZoom(ZOOMS.slice().reverse().find(z => z < zoom) || zoom);
+  $('sampleToggle').onchange = event => { showSamples = event.target.checked; render(); };
+
+  // ---------- Toolbar menus and icons ----------
+  const ICON_PATHS = {
+    add: '<path d="M12 5v14M5 12h14"/>', open: '<path d="M3 7V5h7l2 2h9v3M3 10h19l-3 10H3z"/>',
+    save: '<path d="M4 3h13l4 4v14H3V3zM7 3v6h10V3M7 21v-8h10v8"/>', undo: '<path d="M9 5 3 11l6 6M3 11h11a6 6 0 0 1 6 6"/>',
+    redo: '<path d="m15 5 6 6-6 6m6-6H10a6 6 0 0 0-6 6"/>', card: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h10"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 18 6-6 4 4 3-3 5 5"/>',
+    person: '<circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>', text: '<path d="M4 5h16M12 5v14M8 19h8"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v5M17 3v5M3 11h18"/>',
+    signature: '<path d="m4 16 12-12 4 4L8 20H4zM14 6l4 4M13 21h8"/>', rectangle: '<rect x="3" y="5" width="18" height="14" rx="1"/>',
+    circle: '<circle cx="12" cy="12" r="9"/>', line: '<path d="M3 12h18"/>', star: '<path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/>',
+    barcode: '<path d="M3 4v16M6 4v16M10 4v16M13 4v16M15 4v16M19 4v16M21 4v16"/>', qr: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h4v4h-7v-3"/>',
+    phone: '<path d="m5 3 4 5-3 3c2 3 4 5 7 7l3-3 5 4c-1 4-5 3-9 1S3 11 3 7c0-2 0-3 2-4z"/>', mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
+    location: '<path d="M19 9c0 6-7 12-7 12S5 15 5 9a7 7 0 0 1 14 0z"/><circle cx="12" cy="9" r="2"/>', home: '<path d="m3 10 9-7 9 7M5 9v12h14V9"/>',
+    transport: '<rect x="4" y="3" width="16" height="17" rx="3"/><path d="M4 11h16M7 20v2M17 20v2"/>',
+    camera: '<path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13.5" r="3.5"/>',
+    badge: '<path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/>'
+  };
+  const DATA_ICONS = {
+    firstName: 'person', lastName: 'person', fullName: 'person', middleName: 'person', teacherName: 'person', emergencyContact: 'person',
+    issueDate: 'calendar', expirationDate: 'calendar', dateOfBirth: 'calendar', phone: 'phone', emergencyPhone: 'phone', email: 'mail',
+    address: 'location', campus: 'home', buildingRoom: 'home', homeroom: 'home', section: 'home', barcodeNumber: 'barcode', qrCode: 'qr', transportation: 'transport', idNumber: 'card'
+  };
+  const iconUrl = name => 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICON_PATHS[name] || ICON_PATHS.text) + '</svg>') + '")';
+  function applyIcons(root) {
+    root.querySelectorAll('[data-icon]').forEach(node => node.style.setProperty('--icon', iconUrl(node.dataset.icon)));
+  }
+  /** Data source fields, grouped so people can find them without knowing the field names. */
+  const FIELD_MENUS = {
+    nameMenu: [['Names', ['fullName', 'firstName', 'middleName', 'lastName']]],
+    codeMenu: [['ID and codes', ['idNumber', 'barcodeNumber', 'qrCode']]],
+    schoolMenu: [
+      ['Students', ['class', 'section', 'homeroom', 'teacherName', 'transportation']],
+      ['Staff', ['title', 'department']],
+      ['Location', ['campus', 'buildingRoom']]
+    ],
+    moreOptions: [
+      ['Contact', ['email', 'phone', 'address', 'emergencyContact', 'emergencyPhone']],
+      ['Dates', ['dateOfBirth', 'issueDate', 'expirationDate']],
+      ['Other', ['bloodType', 'text']]
+    ]
+  };
+  const FIELD_NOTES = {
+    fullName: 'The whole name in one field', firstName: 'The first (given) name', middleName: 'The middle name', lastName: 'The last (family) name',
+    idNumber: 'Shown as “ID #: 102345”', barcodeNumber: 'A barcode made from a field, e.g. the ID', qrCode: 'A QR code made from a field, e.g. a link',
+    class: 'Shown as “Grade 9”', section: 'e.g. 12A · Card Studio can show one class at a time', homeroom: 'e.g. Room 214',
+    teacherName: 'e.g. the homeroom teacher', transportation: 'A bus, walking, or pick-up icon', title: 'e.g. Teacher, Nurse, Principal',
+    department: 'e.g. Science', campus: 'The school or campus name', buildingRoom: 'e.g. B-204',
+    email: 'An email address', phone: 'A phone number', address: 'A home or mailing address', emergencyContact: 'The person to call',
+    emergencyPhone: 'That person’s phone number', dateOfBirth: 'A birth date', issueDate: 'When the card was issued',
+    expirationDate: 'When the card stops being valid', bloodType: 'e.g. A+', text: 'Any other field, shown as plain text'
+  };
+  function fieldButton(type) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.add = type;
+    button.dataset.icon = DATA_ICONS[type] || 'text';
+    button.append(LABELS[type]);
+    if (FIELD_NOTES[type]) {
+      const note = document.createElement('small');
+      note.textContent = FIELD_NOTES[type];
+      button.appendChild(note);
+    }
+    return button;
+  }
+  function buildDataMenu() {
+    const note = () => {
+      const p = document.createElement('p');
+      p.className = 'menu-note';
+      p.textContent = 'Each card shows that person’s own value from your data source. Connect it in Card Studio → ⚙ Settings → Design Mapping.';
+      return p;
+    };
+    Object.keys(FIELD_MENUS).forEach(id => {
+      const host = $(id);
+      if (id !== 'moreOptions') host.appendChild(note());
+      FIELD_MENUS[id].forEach(([title, types]) => {
+        if (FIELD_MENUS[id].length > 1) {
+          const heading = document.createElement('div');
+          heading.className = 'menu-title';
+          heading.textContent = title;
+          host.appendChild(heading);
+        }
+        types.forEach(type => host.appendChild(fieldButton(type)));
+      });
+    });
+    // “More fields” search looks through every spreadsheet field, not only the ones listed there.
+    const others = Object.keys(FIELD_MENUS).filter(id => id !== 'moreOptions')
+      .reduce((list, id) => list.concat(...FIELD_MENUS[id].map(group => group[1])), []);
+    const extra = document.createElement('div');
+    extra.id = 'searchExtra';
+    extra.hidden = true;
+    others.forEach(type => extra.appendChild(fieldButton(type)));
+    $('moreOptions').after(extra);
+    const plain = text => String(text).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matches = button => plain(button.firstChild.textContent).includes(plain($('dataSearch').value));
+    $('dataSearch').oninput = () => {
+      const term = plain($('dataSearch').value);
+      $('moreOptions').querySelectorAll('button').forEach(button => { button.hidden = Boolean(term) && !matches(button); });
+      $('moreOptions').querySelectorAll('.menu-title').forEach(title => { title.hidden = Boolean(term); });
+      extra.hidden = !term;
+      extra.querySelectorAll('button').forEach(button => { button.hidden = !matches(button); });
+    };
+    $('dataSearch').onkeydown = event => {
+      if (event.key === 'Enter') {
+        const first = Array.from($('moreMenu').querySelectorAll('button')).find(button => !button.hidden && button.offsetParent);
+        if (first) first.click();
+      }
+    };
+  }
+  function closeMenus() {
+    document.querySelectorAll('.menu').forEach(menu => { menu.hidden = true; });
+    document.querySelectorAll('[data-menu]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  }
+  document.querySelectorAll('[data-menu]').forEach(button => {
+    button.onclick = event => {
+      event.stopPropagation();
+      const menu = $(button.dataset.menu);
+      const opening = menu.hidden;
+      closeMenus();
+      if (!opening) return;
+      menu.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      menu.classList.toggle('right', button.getBoundingClientRect().left > window.innerWidth - 260);
+      const search = menu.querySelector('input');
+      if (search) { search.value = ''; search.oninput({target: search}); search.focus(); }
+    };
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!event.target.closest('.menu, [data-menu]')) closeMenus();
+    document.querySelectorAll('.size-menu').forEach(menu => { if (!menu.parentElement.contains(event.target)) menu.hidden = true; });
+  });
+  document.addEventListener('click', event => {
+    const add = event.target.closest('[data-add]');
+    if (add) { closeMenus(); insert(add.dataset.add); }
+
+  });
+  document.querySelectorAll('[data-close]').forEach(button => { button.onclick = () => button.closest('dialog').close(); });
+  $('helpButton').onclick = () => $('helpDialog').showModal();
+
+  // ---------- Undo / redo and unsaved tracking ----------
+  const histories = new Map();
+  let historyTimer = null;
+  function snapshot(target) {
+    const sort = value => {
+      if (Array.isArray(value)) return value.map(sort);
+      if (value && typeof value === 'object') {
+        const out = {};
+        Object.keys(value).sort().forEach(key => {
+          if (['fileType', 'schemaVersion', 'savedAt', 'elements'].includes(key) || (key === 'logoData' && !value[key])) return;
+          out[key] = sort(value[key]);
+        });
+        return out;
+      }
+      return value;
+    };
+    return JSON.stringify(sort(target));
+  }
+  function historyFor(tab) {
+    if (!histories.has(tab.id)) {
+      const value = snapshot(tab.design);
+      histories.set(tab.id, {undo: [value], redo: [], saved: tab.fileName ? value : null});
+    }
+    return histories.get(tab.id);
+  }
+  const activeTab = () => designTabs.find(tab => tab.id === activeTabId);
+  function isDirty(tab) {
+    const history = historyFor(tab);
+    const current = snapshot(tab.design);
+    return history.saved === null ? current !== history.undo[0] : current !== history.saved;
+  }
+  function recordHistory() {
+    const tab = activeTab();
+    if (!tab) return;
+    const history = historyFor(tab);
+    const value = snapshot(tab.design);
+    if (history.undo[history.undo.length - 1] !== value) {
+      history.undo.push(value);
+      if (history.undo.length > 60) history.undo.shift();
+      history.redo = [];
+      renderDesignTabs();
+    }
+    $('undoButton').disabled = history.undo.length < 2;
+    $('redoButton').disabled = !history.redo.length;
+  }
+  function scheduleHistory() {
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(recordHistory, 250);
+  }
+  function restore(direction) {
+    recordHistory();
+    const tab = activeTab();
+    const history = historyFor(tab);
+    const from = direction === 'undo' ? history.undo : history.redo;
+    const to = direction === 'undo' ? history.redo : history.undo;
+    if (direction === 'undo' ? from.length < 2 : !from.length) return;
+    to.push(from.pop());
+    design = ensureTwoSides(JSON.parse(history.undo[history.undo.length - 1]));
+    tab.design = design;
+    selectedId = null;
+    syncControls();
+    render();
+    recordHistory();
+  }
+  $('undoButton').onclick = () => restore('undo');
+  $('redoButton').onclick = () => restore('redo');
+
+  // ---------- Design tabs ----------
+  function renderDesignTabs() {
+    const host = $('designTabs');
+    host.replaceChildren();
+    designTabs.forEach((tab, index) => {
+      const item = document.createElement('div');
+      item.className = 'design-tab' + (tab.id === activeTabId ? ' active' : '');
+      item.setAttribute('role', 'tab');
+      item.setAttribute('aria-selected', String(tab.id === activeTabId));
+      const dirty = histories.has(tab.id) && isDirty(tab);
+      const name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'design-tab-name' + (dirty ? ' dirty' : '');
+      name.textContent = tab.design.name || 'Card ' + (index + 1);
+      name.title = (tab.fileName || tab.design.name) + (dirty ? ' — unsaved changes' : '');
+      name.onclick = () => switchTab(tab.id);
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'design-tab-close';
+      close.textContent = '×';
+      close.setAttribute('aria-label', 'Close ' + name.textContent);
+      close.onclick = () => closeTab(tab.id);
+      item.append(name, close);
+      host.appendChild(item);
+    });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'design-tab new';
+    add.textContent = '＋';
+    add.setAttribute('aria-label', 'New card or open a saved design');
+    add.title = 'Start a new card from a template, or open a saved design';
+    add.onclick = openTemplates;
+    host.appendChild(add);
+  }
+  function storeActiveTab() {
+    const tab = activeTab();
+    if (tab) Object.assign(tab, {design: design, activeSide: activeSide, selectedId: selectedId});
+  }
+  function showTab(tab) {
+    activeTabId = tab.id;
+    design = tab.design;
+    activeSide = tab.activeSide || 'front';
+    selectedId = tab.selectedId || null;
+    $('frontSideTab').setAttribute('aria-pressed', String(activeSide === 'front'));
+    $('backSideTab').setAttribute('aria-pressed', String(activeSide === 'back'));
+    syncControls();
+    render();
+    recordHistory();
+  }
+  function addTab(nextDesign, fileName) {
+    const replace = untouchedStartCard();
+    storeActiveTab();
+    const tab = {id: uid('tab_'), design: ensureTwoSides(nextDesign), activeSide: 'front', selectedId: null, fileName: fileName || ''};
+    designTabs.push(tab);
+    historyFor(tab);
+    if (replace) {
+      // No leftover empty “Untitled” tab next to the design just opened or started.
+      designTabs = designTabs.filter(item => item !== replace);
+      histories.delete(replace.id);
+    }
+    showTab(tab);
+  }
+  function switchTab(id) {
+    if (id === activeTabId) return;
+    storeActiveTab();
+    const tab = designTabs.find(item => item.id === id);
+    if (tab) showTab(tab);
+  }
+  function removeTab(id) {
+    const index = designTabs.findIndex(item => item.id === id);
+    if (index < 0) return;
+    designTabs.splice(index, 1);
+    histories.delete(id);
+    if (!designTabs.length) return addTab(blankDesign('Untitled', PORTRAIT_SLOT), '');
+    if (id === activeTabId) showTab(designTabs[Math.min(index, designTabs.length - 1)]);
+    else renderDesignTabs();
+  }
+  function closeTab(id) {
+    recordHistory();
+    const tab = designTabs.find(item => item.id === id);
+    if (!tab) return;
+    if (!isDirty(tab)) return removeTab(id);
+    const dialog = document.createElement('dialog');
+    dialog.className = 'studio-dialog';
+    dialog.style.width = 'min(420px,calc(100vw - 32px))';
+    dialog.innerHTML = '<h2>Unsaved changes</h2><p>Save “' + R.escapeHtml(tab.design.name) + '” before closing it?</p><footer><button class="btn" value="cancel">Cancel</button><button class="btn" value="discard">Don’t save</button><button class="btn primary" value="save">Save</button></footer>';
+    document.body.appendChild(dialog);
+    dialog.querySelectorAll('button').forEach(button => {
+      button.onclick = () => {
+        dialog.close();
+        if (button.value === 'discard') removeTab(id);
+        if (button.value === 'save') {
+          switchTab(id);
+          openSaveDialog().then(saved => { if (saved) removeTab(id); });
+        }
+      };
+    });
+    dialog.addEventListener('close', () => dialog.remove());
+    dialog.showModal();
+  }
+
+  // ---------- Open / save ----------
+  const nameFromFile = (fileName, fallback) => String(fileName || '').replace(/\.json$/i, '').trim() || String(fallback || '').trim() || 'Untitled';
+  $('templateOpenButton').onclick = () => { $('templateDialog').close(); $('openDesignFile').click(); };
+  $('openDesignFile').onchange = async event => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const loaded = JSON.parse(await file.text());
+      if (!loaded || loaded.fileType !== 'ID_CARD_DESIGN' || (!Array.isArray(loaded.elements) && !Array.isArray(loaded.frontElements))) {
+        throw new Error('Choose a .json file saved by Design Studio.');
+      }
+      ['fileType', 'schemaVersion', 'savedAt'].forEach(key => delete loaded[key]);
+      loaded.name = nameFromFile(file.name, loaded.name);
+      loaded.dataSource = 'universal';
+      if (!loaded.designId) loaded.designId = crypto.randomUUID();
+      addTab(loaded, file.name);
+      setStatus('Opened ' + file.name);
+    } catch (error) {
+      setStatus('Unable to open design: ' + (error.message || error), true);
+    }
+  };
+  function designFile(name) {
+    const output = JSON.parse(JSON.stringify(ensureTwoSides(design)));
+    output.name = name;
+    output.fileType = 'ID_CARD_DESIGN';
+    output.schemaVersion = 5;
+    output.savedAt = new Date().toISOString();
+    return JSON.stringify(output, null, 2);
+  }
+  function fileNameFor(name) {
+    return (String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/g, '').trim() || 'ID Card Design') + '.json';
+  }
+  function markSaved(fileName) {
+    const tab = activeTab();
+    design.name = nameFromFile(fileName, design.name);
+    tab.fileName = fileName;
+    historyFor(tab).saved = snapshot(design);
+    syncControls();
+    render();
+  }
+  /** Always works: downloads the design to the browser’s Downloads folder. */
+  function saveDownload() {
+    design.name = design.name || $('designName').value.trim() || 'Untitled';
+    const fileName = fileNameFor(design.name);
+    const url = URL.createObjectURL(new Blob([designFile(design.name)], {type: 'application/json;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    markSaved(fileName);
+    setStatus('Saved ' + fileName + ' to your Downloads folder');
+    return true;
+  }
+  /**
+   * Choose folder and file name. The picker runs in a small top-level window because
+   * Apps Script frames cannot open it. Resolves true once saved, false if closed.
+   */
+  function saveToFolder() {
+    return new Promise(resolve => {
+      const popup = window.open('', 'idCardSaveWindow', 'width=440,height=240');
+      if (!popup || typeof popup.showSaveFilePicker !== 'function') {
+        if (popup) popup.close();
+        setStatus('This browser cannot choose a folder, so the design was saved to Downloads.');
+        return resolve(saveDownload());
+      }
+      const suggested = fileNameFor(design.name);
+      popup.document.title = 'Save ID Card Design';
+      popup.document.body.innerHTML = '<main style="max-width:360px;margin:34px auto;font-family:Segoe UI,Arial,sans-serif;text-align:center;color:#17233a"><h2 style="margin:0 0 10px;font-size:19px">Save ID Card Design</h2><p id="help" style="color:#667085">Choose a folder and file name. The file name becomes the design name.</p><button id="choose" style="width:100%;padding:12px;color:#fff;background:#2563eb;border:0;border-radius:8px;font-weight:700;cursor:pointer">Choose location…</button></main>';
+      const help = popup.document.getElementById('help');
+      let saved = false;
+      const watch = setInterval(() => { if (popup.closed) { clearInterval(watch); resolve(saved); } }, 400);
+      popup.document.getElementById('choose').onclick = async () => {
+        try {
+          const handle = await popup.showSaveFilePicker({suggestedName: suggested, types: [{description: 'ID Card Design', accept: {'application/json': ['.json']}}]});
+          const writable = await handle.createWritable();
+          await writable.write(new Blob([designFile(nameFromFile(handle.name, design.name))], {type: 'application/json;charset=utf-8'}));
+          await writable.close();
+          saved = true;
+          markSaved(handle.name || suggested);
+          setStatus('Saved ' + (handle.name || suggested));
+          popup.close();
+        } catch (error) {
+          help.textContent = error && error.name === 'AbortError' ? 'Cancelled. You can try again or close this window.' : (error.message || String(error));
+        }
+      };
+    });
+  }
+  /**
+   * The one Save button: confirm the file name, then save to Downloads (always works)
+   * or choose a folder (Chrome and Edge). Resolves true when the design was saved.
+   */
+  function openSaveDialog() {
+    return new Promise(resolve => {
+      const canChoose = typeof window.showSaveFilePicker === 'function';
+      const dialog = document.createElement('dialog');
+      dialog.className = 'studio-dialog';
+      dialog.style.width = 'min(440px,calc(100vw - 32px))';
+      dialog.innerHTML = '<h2>Save design</h2><p>The file name is also the design’s name.</p>' +
+        '<label class="label" for="saveFileName">File name</label>' +
+        '<div class="save-name"><input id="saveFileName" class="input" maxlength="80"><span>.json</span></div>' +
+        '<footer><button class="btn" type="button" data-choice="cancel">Cancel</button>' +
+        (canChoose ? '<button class="btn" type="button" data-choice="folder" title="Pick the folder and file name">Choose folder…</button>' : '') +
+        '<button class="btn primary" type="button" data-choice="download">Save to Downloads</button></footer>';
+      document.body.appendChild(dialog);
+      const input = dialog.querySelector('#saveFileName');
+      input.value = (design.name || 'Untitled').replace(/\.json$/i, '');
+      let chose = false;
+      const finish = async choice => {
+        if (choice === 'cancel') return dialog.close();
+        chose = true;
+        design.name = input.value.trim() || 'Untitled';
+        syncControls();
+        dialog.close();
+        resolve(choice === 'folder' ? await saveToFolder() : saveDownload());
+      };
+      dialog.querySelectorAll('[data-choice]').forEach(button => { button.onclick = () => finish(button.dataset.choice); });
+      input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); finish('download'); } });
+      dialog.addEventListener('close', () => {
+        dialog.remove();
+        if (!chose) resolve(false);
+      });
+      dialog.showModal();
+      input.select();
+    });
+  }
+  $('saveButton').onclick = () => openSaveDialog();
+
+  // ---------- Keyboard ----------
+  document.addEventListener('keydown', event => {
+    const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
+    if (document.querySelector('dialog[open]')) return;
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) openSaveDialog(); return; }
+      if (typing) return;
+      if (key === 'z') { event.preventDefault(); restore(event.shiftKey ? 'redo' : 'undo'); }
+      else if (key === 'y') { event.preventDefault(); restore('redo'); }
+      else if (key === 'd') { event.preventDefault(); duplicateSelected(); }
+      return;
+    }
+    if (event.key === 'Escape') { closeMenus(); if (!typing && selectedId) { selectedId = null; render(); } return; }
+    const model = selected();
+    if (!model || typing) return;
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      deleteSelected();
+      return;
+    }
+    const step = event.shiftKey ? 5 : 1;
+    const moves = {ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step]};
+    if (!moves[event.key] || model.locked) return;
+    event.preventDefault();
+    model.x += moves[event.key][0];
+    model.y += moves[event.key][1];
+    render();
+  });
+  window.addEventListener('beforeunload', event => {
+    recordHistory();
+    if (designTabs.some(isDirty)) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
+
+  // ---------- Start ----------
+  buildInspector();
+  buildDataMenu();
+  applyIcons(document);
+  addTab(blankDesign('Untitled', PORTRAIT_SLOT), '');
+  // Start screen: choose a template, a blank card, or a saved design.
+  openTemplates(true);
+})();
+</script>
+</body>
+</html>
